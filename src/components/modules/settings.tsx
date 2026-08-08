@@ -120,6 +120,11 @@ export function SettingsModule() {
   const [users, setUsers] = useState<any[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
   const [syncSettings, setSyncSettings] = useState<Record<string, string>>({})
+  const [testingConnection, setTestingConnection] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<{ success: boolean; message: string } | null>(null)
+  const [localStats, setLocalStats] = useState({ products: 0, customers: 0, sales: 0, pendingSync: 0, stockMovements: 0, loyaltyTxns: 0 })
   const { online, setOnline, pendingSync, setPendingSync } = useConnectionStore()
 
   const load = useCallback(async () => {
@@ -136,6 +141,7 @@ export function SettingsModule() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { loadLocalStats() }, [])
 
   // Load sync settings from the flat settings array
   useEffect(() => {
@@ -179,7 +185,91 @@ export function SettingsModule() {
     try {
       const { refreshLocalData } = await import('@/lib/local-db')
       await refreshLocalData()
-      toast.success('تم تحديث البيانات المحلية')
+      await loadLocalStats()
+      toast.success('تم إعادة بناء قاعدة البيانات المحلية')
+    } catch (e: any) {
+      toast.error(e.message)
+    }
+  }
+
+  const clearLocalDB = async () => {
+    try {
+      const { clearLocalDB: clearDB } = await import('@/lib/local-db')
+      await clearDB()
+      await loadLocalStats()
+      toast.success('تم مسح قاعدة البيانات المحلية')
+    } catch (e: any) {
+      toast.error(e.message)
+    }
+  }
+
+  const loadLocalStats = async () => {
+    try {
+      const { getLocalDBStats } = await import('@/lib/local-db')
+      const stats = await getLocalDBStats()
+      setLocalStats(stats)
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  const testConnection = async () => {
+    setTestingConnection(true)
+    setConnectionStatus(null)
+    try {
+      const { testSupabaseConnection } = await import('@/lib/sync-engine')
+      const result = await testSupabaseConnection(syncSettings['supabase.url'] || '', syncSettings['supabase.key'] || '')
+      setConnectionStatus(result)
+      if (result.success) toast.success(result.message)
+      else toast.error(result.message)
+    } catch (e: any) {
+      setConnectionStatus({ success: false, message: e.message })
+    } finally {
+      setTestingConnection(false)
+    }
+  }
+
+  const uploadToSupabase = async () => {
+    setUploading(true)
+    try {
+      // Save settings first
+      await saveSyncSettings()
+      // Then export
+      const { exportLocalToSupabase } = await import('@/lib/supabase')
+      const result = await exportLocalToSupabase()
+      if (result.success) toast.success(result.message)
+      else toast.error(result.message)
+      setConnectionStatus({ success: result.success, message: result.message })
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const downloadFromSupabase = async () => {
+    setDownloading(true)
+    try {
+      await saveSyncSettings()
+      const { importFromSupabase } = await import('@/lib/supabase')
+      const result = await importFromSupabase()
+      if (result.success) toast.success(result.message)
+      else toast.error(result.message)
+      await loadLocalStats()
+      setConnectionStatus({ success: result.success, message: result.message })
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const syncNow = async () => {
+    try {
+      const { syncNow: doSync } = await import('@/lib/sync-engine')
+      const result = await doSync()
+      toast.success(`تمت المزامنة: ${result.pushed} مرفوع، ${result.pulled} محمل`)
+      await loadLocalStats()
     } catch (e: any) {
       toast.error(e.message)
     }
@@ -297,7 +387,7 @@ export function SettingsModule() {
             <TabsTrigger value="tax" className="gap-1.5"><Percent className="w-4 h-4" />الضرائب</TabsTrigger>
             <TabsTrigger value="receipt" className="gap-1.5"><Printer className="w-4 h-4" />الإيصال</TabsTrigger>
             <TabsTrigger value="hardware" className="gap-1.5"><Cpu className="w-4 h-4" />الأجهزة</TabsTrigger>
-            <TabsTrigger value="sync" className="gap-1.5"><Cloud className="w-4 h-4" />المزامنة</TabsTrigger>
+            <TabsTrigger value="sync" className="gap-1.5" onClick={loadLocalStats}><Cloud className="w-4 h-4" />المزامنة</TabsTrigger>
             <TabsTrigger value="users" className="gap-1.5"><Users className="w-4 h-4" />المستخدمون</TabsTrigger>
           </TabsList>
 
@@ -565,6 +655,61 @@ export function SettingsModule() {
                     </div>
                   </div>
 
+                  {/* Supabase test & sync buttons */}
+                  <div className="border-t pt-3 space-y-2">
+                    <div className="flex gap-2 flex-wrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={testConnection}
+                        disabled={testingConnection || !syncSettings['supabase.url']}
+                      >
+                        <TestTube className="w-4 h-4 ml-1" />
+                        {testingConnection ? 'جاري الاختبار...' : 'اختبار الاتصال'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={uploadToSupabase}
+                        disabled={uploading || !syncSettings['supabase.url']}
+                      >
+                        <Cloud className="w-4 h-4 ml-1" />
+                        {uploading ? 'جاري الرفع...' : 'رفع البيانات للسحابة'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={downloadFromSupabase}
+                        disabled={downloading || !syncSettings['supabase.url']}
+                      >
+                        <Database className="w-4 h-4 ml-1" />
+                        {downloading ? 'جاري التحميل...' : 'تحميل من السحابة'}
+                      </Button>
+                    </div>
+                    {connectionStatus && (
+                      <div className={`p-2 rounded-lg text-sm flex items-center gap-2 ${
+                        connectionStatus.success ? 'bg-green-500/10 text-green-700' : 'bg-red-500/10 text-red-700'
+                      }`}>
+                        {connectionStatus.success
+                          ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          : <XCircle className="w-4 h-4 shrink-0" />}
+                        <span>{connectionStatus.message}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SQL Schema instructions */}
+                  <div className="bg-amber-500/10 p-3 rounded-lg">
+                    <p className="text-sm font-medium text-amber-700 mb-1">📋 إعداد Supabase لأول مرة</p>
+                    <p className="text-xs text-muted-foreground">
+                      1. أنشئ مشروع جديد على <a href="https://supabase.com" target="_blank" rel="noopener" className="text-primary underline">supabase.com</a><br/>
+                      2. اذهب إلى SQL Editor وانسخ محتوى ملف <code className="bg-muted px-1 rounded">supabase-schema.sql</code><br/>
+                      3. الصق SQL ونفذه لإنشاء الجداول<br/>
+                      4. انسخ Project URL و Anon Key من Settings → API<br/>
+                      5. أدخلهما هنا واضغط "اختبار الاتصال"
+                    </p>
+                  </div>
+
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => { simulateOffline(); toast.success('تم تفعيل وضع الأوفلين') }}>
                       <WifiOff className="w-4 h-4 ml-1" />
@@ -573,6 +718,10 @@ export function SettingsModule() {
                     <Button variant="outline" size="sm" onClick={() => { simulateOnline(); toast.success('تم استعادة الاتصال') }}>
                       <Wifi className="w-4 h-4 ml-1" />
                       استعادة الاتصال
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={syncNow}>
+                      <RefreshCw className="w-4 h-4 ml-1" />
+                      مزامنة الآن
                     </Button>
                   </div>
                 </CardContent>
@@ -589,16 +738,40 @@ export function SettingsModule() {
                   <div className="bg-amber-500/10 p-3 rounded-lg flex gap-2">
                     <Database className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                     <div className="text-sm">
-                      <p className="font-medium">التخزين المحلي (IndexedDB)</p>
+                      <p className="font-medium">التخزين المحلي القوي (IndexedDB / Dexie)</p>
                       <p className="text-muted-foreground mt-1">
-                        يتم حفظ نسخة من المنتجات والعملاء محلياً للعمل بدون إنترنت. عمليات البيع تُحفظ محلياً وتُزامن عند عودة الاتصال.
+                        عند أول تثبيت، يُبنى قاعدة بيانات محلية كاملة بكل المنتجات والعملاء والفئات.
+                        عمليات البيع تعمل بدون إنترنت وتُحفظ محلياً ثم تُزامن مع Supabase عند عودة الاتصال.
                       </p>
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" onClick={refreshLocalDB}>
-                    <RefreshCw className="w-4 h-4 ml-1" />
-                    تحديث البيانات المحلية
-                  </Button>
+
+                  {/* Local DB statistics */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="text-center p-3 rounded-lg bg-muted/30">
+                      <p className="text-xs text-muted-foreground mb-1">منتجات</p>
+                      <p className="text-xl font-bold pos-number">{localStats.products}</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-muted/30">
+                      <p className="text-xs text-muted-foreground mb-1">عملاء</p>
+                      <p className="text-xl font-bold pos-number">{localStats.customers}</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-muted/30">
+                      <p className="text-xs text-muted-foreground mb-1">فواتير محفوظة</p>
+                      <p className="text-xl font-bold pos-number">{localStats.sales}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={refreshLocalDB} className="flex-1">
+                      <RefreshCw className="w-4 h-4 ml-1" />
+                      إعادة بناء القاعدة المحلية
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={clearLocalDB}>
+                      <XCircle className="w-4 h-4 ml-1" />
+                      مسح
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </div>
