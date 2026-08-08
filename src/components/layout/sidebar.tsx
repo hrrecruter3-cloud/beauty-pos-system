@@ -8,7 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import {
   LayoutDashboard, ShoppingCart, Package, Boxes, Receipt, Users, Award,
   Truck, Building2, Wallet, Receipt as ReceiptIcon, BarChart3, Settings,
-  ScrollText, LogOut, Wifi, WifiOff, RefreshCw, Menu, Moon, Sun
+  ScrollText, LogOut, Wifi, WifiOff, RefreshCw, Menu, Moon, Sun, Tags
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEffect, useState } from 'react'
@@ -17,6 +17,7 @@ const MODULES = [
   { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard, roles: ['ADMIN','MANAGER','CASHIER','ACCOUNTANT'] },
   { id: 'pos', label: 'نقطة البيع', icon: ShoppingCart, roles: ['ADMIN','MANAGER','CASHIER'] },
   { id: 'products', label: 'المنتجات', icon: Package, roles: ['ADMIN','MANAGER','WAREHOUSE'] },
+  { id: 'categories', label: 'الفئات', icon: Tags, roles: ['ADMIN','MANAGER','WAREHOUSE'] },
   { id: 'inventory', label: 'المخزون', icon: Boxes, roles: ['ADMIN','MANAGER','WAREHOUSE'] },
   { id: 'sales', label: 'المبيعات', icon: Receipt, roles: ['ADMIN','MANAGER','CASHIER','ACCOUNTANT'] },
   { id: 'customers', label: 'العملاء', icon: Users, roles: ['ADMIN','MANAGER','CASHIER'] },

@@ -340,3 +340,88 @@ Stage Summary:
 - Loading skeletons, empty states, error toasts throughout
 - Integration with existing API routes verified against actual response shapes
 - Lint passes clean; new files have zero TypeScript errors
+
+---
+Task ID: 2-3
+Agent: general-purpose
+Task: Add QR codes, quick price edit, categories module with hierarchical view
+
+Work Log:
+- Read worklog.md and existing files: products.tsx, qr-code-dialog.tsx, api.ts, categories/route.ts, customers/[id]/route.ts (as dynamic route reference), prisma schema (Category model: id/name/nameAr/parentId/parent/children/color/icon/createdAt/products)
+
+Created /src/app/api/categories/[id]/route.ts:
+- GET /api/categories/[id]: returns single category with parent, children (nested), products (count as productCount)
+- PUT /api/categories/[id]: updates name/nameAr/parentId/color/icon; cycle guard prevents setting parent to self or to any descendant (walks parent chain with visited set)
+- DELETE /api/categories/[id]: refuses deletion if category has children or products (returns 409 with helpful Arabic message), otherwise deletes
+- All handlers use Next.js 16 awaited params signature, successResponse/errorResponse helpers, force-dynamic
+
+Updated /src/components/modules/products.tsx (Task 1):
+- Added imports: Fragment (react), QRCodeDialog + BulkQRDialog from '@/components/pos/qr-code-dialog', QrCode + Tag from lucide-react
+- Added state: qrProduct, bulkQrOpen, quickPriceProduct, quickPriceValue, quickPriceSaving
+- Added categoryHierarchy useMemo: builds parent→subcategories structure from flat /categories response (parentId === null identifies roots)
+- Added openQuickPrice(p) handler: opens dialog with product, pre-fills new price input with current sellingPrice
+- Added saveQuickPrice() handler: validates price (non-NaN, ≥0), PUT /products/:id with { sellingPrice }, toast, reload, disabled during save
+- Header: added "طباعة QR للكل" outline button (disabled when filtered list empty, opens BulkQRDialog with all filtered products)
+- Category filter dropdown: now renders hierarchy — parent rows as normal items, subcategories prefixed with "— " under each parent, wrapped in Fragment with key
+- Add/Edit form category select: same hierarchy rendering as filter
+- Desktop table actions column: added two new ghost icon buttons before Edit/Trash — Tag (toggles quick price dialog) and QrCode (opens QRCodeDialog). Existing edit/archive buttons preserved.
+- Mobile cards: actions row updated from 2 buttons to 4 — Edit, Change Price (Tag), QR (QrCode), Archive. Uses flex-wrap for narrow screens.
+- Added three dialogs at end of component:
+  1. <QRCodeDialog open={!!qrProduct} ... /> for single product
+  2. <BulkQRDialog open={bulkQrOpen} products={filtered} /> for bulk print
+  3. Quick Price Edit Dialog (sm:max-w-sm): shows current price in muted card, new price Input (number, autoFocus, Enter key submits), live diff calculation with green/red color coding, Save/Cancel footer
+- All existing functionality preserved: search (350ms debounce), CSV import/export, add/edit/delete, table view, mobile cards, stats cards, filters, loading/empty/error states
+
+Created /src/components/modules/categories.tsx (Task 2) exporting `CategoriesModule`:
+- Header "الفئات والفئات الفرعية" with FolderOpen icon and "إضافة فئة" button
+- Stats cards: إجمالي الفئات / فئات رئيسية (roots) / فئات فرعية (subs) / منتجات مصنفة (sum of productCount)
+- Search input (filters by name/nameAr, preserves parent when any child matches)
+- Tree view with expand/collapse:
+  * Desktop: table with sticky header — parent rows highlighted with bg-muted/30 and FolderOpen icon, collapse chevron (ChevronDown/ChevronRight) when has subcategories, subcategory count badge; subcategory rows indented with "—" prefix and Tag icon
+  * Mobile: stacked cards — parent card with collapse chevron, color dot, name, English name, product count, action buttons; subcategories shown in bordered-right column (border-r-2) with pr-3 indentation when expanded
+  * Each row shows: color dot (inline span with bg-color style, fallback muted), name (Arabic preferred), English name, product count (formatNumber), actions (Add Subcategory / Edit / Delete for parents; Edit / Delete for subs)
+- collapsedParents state: Set<string> toggled per parent
+- Add/Edit dialog (sm:max-w-md):
+  * Name (English) * + Name (Arabic) inputs in 2-col grid
+  * Parent category select (root categories only, excludes self when editing) — empty value means root
+  * Color picker: 12 preset swatches (rose, pink, purple, blue, teal, green, yellow, orange, brown, gray, black + beauty-store palette) + custom color via hidden native <input type="color"> + "إزالة اللون" clear button. Selected swatch shows border-foreground + scale-110
+  * Icon (optional) text input for emoji/short text
+  * Live preview: Badge with color border/text + color dot + icon + name, plus "← parent name" arrow when parentId set
+- Delete confirmation dialog:
+  * Pre-fetches fresh /categories/[id] to verify counts server-side (deletePreview state)
+  * Shows red warning box if has children or products (with count) — disables Delete button
+  * Shows green "can delete safely" message when no children/products
+  * Confirm triggers DELETE /categories/[id]
+- All text Arabic, RTL-aware, formatNumber used throughout
+- Loading skeletons, error state with retry, empty state with "إضافة أول فئة" CTA
+- Uses shadcn/ui: Card, Button, Input, Label, Badge, Skeleton, ScrollArea, Separator, Table family, Dialog family, Select family
+- Uses lucide-react: Plus, Pencil, Trash2, Folder, FolderOpen, ChevronDown, ChevronRight, Palette, Tag, AlertTriangle, Search, Package
+
+Wiring:
+- /src/components/layout/sidebar.tsx: added `Tags` to lucide imports and new entry `{ id: 'categories', label: 'الفئات', icon: Tags, roles: ['ADMIN','MANAGER','WAREHOUSE'] }` placed right after 'products'
+- /src/app/page.tsx: imported `CategoriesModule` from '@/components/modules/categories' and added `case 'categories': return <CategoriesModule />` in renderModule switch
+
+Pre-existing lint fixes:
+- /src/components/pos/qr-code-dialog.tsx: moved `generateQR` function declaration above the useEffect that calls it (react-hooks/immutability error: "Cannot access variable before it is declared")
+- /src/app/page.tsx: moved `checkSystemLock` function declaration above the useEffect that calls it (same react-hooks/immutability error pattern)
+
+Lint & TypeScript:
+- `bun run lint` passes with 0 errors, 0 warnings (was 2 errors before fixing pre-existing qr-code-dialog.tsx + page.tsx issues)
+- `bunx tsc --noEmit` shows zero errors in any new/modified file (products.tsx, categories.tsx, categories/[id]/route.ts, qr-code-dialog.tsx, page.tsx, layout/sidebar.tsx); remaining TS errors are all in pre-existing files (examples/, skills/, prisma/seed.ts, pos.tsx) unrelated to this task
+
+Files Created:
+- /home/z/my-project/src/app/api/categories/[id]/route.ts (~115 lines)
+- /home/z/my-project/src/components/modules/categories.tsx (~560 lines)
+
+Files Modified:
+- /home/z/my-project/src/components/modules/products.tsx (added ~165 lines: imports, state, handlers, hierarchy rendering in filter & form, QR/Price action buttons in table + mobile, three new dialogs at end)
+- /home/z/my-project/src/components/pos/qr-code-dialog.tsx (moved function declaration above useEffect to fix react-hooks/immutability error)
+- /home/z/my-project/src/app/page.tsx (moved checkSystemLock above useEffect + wired CategoriesModule import and switch case)
+- /home/z/my-project/src/components/layout/sidebar.tsx (added Tags icon import + categories nav entry)
+
+Stage Summary:
+- Products module now supports QR code generation per product and bulk QR printing for filtered list, fast quick-price-edit dialog for cashiers, and hierarchical category filtering/select with parent-child grouping using "—" prefix for subcategories
+- New categories module provides full CRUD with parent/child tree visualization, expand/collapse, color-coded badges with preset beauty palette + custom color picker, product count per category, safe-delete with server-side child/product count verification
+- New /api/categories/[id] route supports GET/PUT/DELETE with cycle-prevention guard and refusal-to-delete-if-has-children-or-products semantics
+- Categories module wired into sidebar navigation (between Products and Inventory) and page.tsx switch
+- Lint passes clean; all new/modified files compile with zero TypeScript errors

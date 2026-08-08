@@ -23,6 +23,7 @@ import {
   Settings as SettingsIcon, Store, Coins, Percent, Printer, Scan, Cpu,
   Save, RefreshCw, Users, Wifi, WifiOff, CheckCircle2, XCircle, TestTube,
   Printer as PrinterIcon, Banknote, AlertTriangle, ShieldCheck, CreditCard, Receipt,
+  Cloud, Database, RefreshCw as SyncIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -118,7 +119,8 @@ export function SettingsModule() {
   const [saving, setSaving] = useState<string | null>(null)
   const [users, setUsers] = useState<any[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
-  const { online, setOnline } = useConnectionStore()
+  const [syncSettings, setSyncSettings] = useState<Record<string, string>>({})
+  const { online, setOnline, pendingSync, setPendingSync } = useConnectionStore()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -134,6 +136,54 @@ export function SettingsModule() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Load sync settings from the flat settings array
+  useEffect(() => {
+    if (flat.length > 0) {
+      const syncKeys = ['supabase.url', 'supabase.key', 'sync.enabled', 'sync.lastSync']
+      const syncData: Record<string, string> = {}
+      for (const s of flat) {
+        if (syncKeys.includes(s.key)) syncData[s.key] = s.value
+      }
+      setSyncSettings(syncData)
+    }
+  }, [flat])
+
+  const updateSyncSetting = (key: string, value: string) => {
+    setSyncSettings(prev => ({ ...prev, [key]: value }))
+  }
+
+  const saveSyncSettings = async () => {
+    setSaving('sync')
+    try {
+      const settingsArr = Object.entries(syncSettings).map(([key, value]) => ({ key, value }))
+      await apiFetch('/settings', { method: 'PUT', body: JSON.stringify({ settings: settingsArr }) })
+      toast.success('تم حفظ إعدادات المزامنة')
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  const simulateOffline = () => {
+    setOnline(false)
+  }
+
+  const simulateOnline = () => {
+    setOnline(true)
+    setPendingSync(0)
+  }
+
+  const refreshLocalDB = async () => {
+    try {
+      const { refreshLocalData } = await import('@/lib/local-db')
+      await refreshLocalData()
+      toast.success('تم تحديث البيانات المحلية')
+    } catch (e: any) {
+      toast.error(e.message)
+    }
+  }
 
   const loadUsers = useCallback(async () => {
     setUsersLoading(true)
@@ -247,6 +297,7 @@ export function SettingsModule() {
             <TabsTrigger value="tax" className="gap-1.5"><Percent className="w-4 h-4" />الضرائب</TabsTrigger>
             <TabsTrigger value="receipt" className="gap-1.5"><Printer className="w-4 h-4" />الإيصال</TabsTrigger>
             <TabsTrigger value="hardware" className="gap-1.5"><Cpu className="w-4 h-4" />الأجهزة</TabsTrigger>
+            <TabsTrigger value="sync" className="gap-1.5"><Cloud className="w-4 h-4" />المزامنة</TabsTrigger>
             <TabsTrigger value="users" className="gap-1.5"><Users className="w-4 h-4" />المستخدمون</TabsTrigger>
           </TabsList>
 
@@ -430,6 +481,124 @@ export function SettingsModule() {
                       اختبارات الأجهزة في هذا الإصدار محاكاة فقط. لتشغيل الأجهزة الفعلية (USB/Serial)، تأكد من تثبيت تعريفات الأجهزة وربطها بمحرك الطباعة المحلي.
                     </p>
                   </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Sync Tab - Supabase & Offline */}
+          <TabsContent value="sync">
+            <div className="space-y-4">
+              <Card>
+                <CardHeader className="pb-3 flex-row items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Cloud className="w-4 h-4 text-primary" />
+                    مزامنة Supabase (الأونلاين)
+                  </CardTitle>
+                  <Button
+                    size="sm"
+                    onClick={saveSyncSettings}
+                    disabled={saving === 'sync'}
+                  >
+                    <Save className="w-4 h-4 ml-1" />
+                    {saving === 'sync' ? 'جاري الحفظ...' : 'حفظ الإعدادات'}
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="bg-blue-500/10 p-3 rounded-lg flex gap-2">
+                    <Cloud className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium">تخزين البيانات أونلاين</p>
+                      <p className="text-muted-foreground mt-1">
+                        يتم مزامنة البيانات مع Supabase تلقائياً عند توفر الإنترنت. البيانات الأوفلين تُحفظ محلياً في المتصفح (IndexedDB) وتُزامن عند عودة الاتصال.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Supabase URL</Label>
+                      <Input
+                        placeholder="https://xxxxx.supabase.co"
+                        value={syncSettings['supabase.url'] || ''}
+                        onChange={(e) => updateSyncSetting('supabase.url', e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">رابط مشروع Supabase الخاص بك</p>
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Supabase Anon Key</Label>
+                      <Input
+                        type="password"
+                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                        value={syncSettings['supabase.key'] || ''}
+                        onChange={(e) => updateSyncSetting('supabase.key', e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">مفتاح الوصول العام (Anon Key)</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-lg border">
+                    <div>
+                      <Label className="cursor-pointer">تفعيل المزامنة التلقائية</Label>
+                      <p className="text-xs text-muted-foreground mt-1">مزامنة البيانات تلقائياً عند توفر الإنترنت</p>
+                    </div>
+                    <Switch
+                      checked={syncSettings['sync.enabled'] === 'true'}
+                      onCheckedChange={(v) => updateSyncSetting('sync.enabled', v ? 'true' : 'false')}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 rounded-lg bg-muted/30">
+                      <p className="text-xs text-muted-foreground mb-1">حالة الاتصال</p>
+                      <div className="flex items-center gap-2">
+                        {online ? (
+                          <><Wifi className="w-4 h-4 text-green-500" /><span className="text-sm font-medium text-green-600">متصل</span></>
+                        ) : (
+                          <><WifiOff className="w-4 h-4 text-red-500" /><span className="text-sm font-medium text-red-600">غير متصل</span></>
+                        )}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted/30">
+                      <p className="text-xs text-muted-foreground mb-1">عمليات معلقة</p>
+                      <p className="text-sm font-bold pos-number">{pendingSync} عملية بانتظار المزامنة</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { simulateOffline(); toast.success('تم تفعيل وضع الأوفلين') }}>
+                      <WifiOff className="w-4 h-4 ml-1" />
+                      محاكاة الأوفلين
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => { simulateOnline(); toast.success('تم استعادة الاتصال') }}>
+                      <Wifi className="w-4 h-4 ml-1" />
+                      استعادة الاتصال
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Database className="w-4 h-4 text-primary" />
+                    قاعدة البيانات المحلية (الأوفلين)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="bg-amber-500/10 p-3 rounded-lg flex gap-2">
+                    <Database className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium">التخزين المحلي (IndexedDB)</p>
+                      <p className="text-muted-foreground mt-1">
+                        يتم حفظ نسخة من المنتجات والعملاء محلياً للعمل بدون إنترنت. عمليات البيع تُحفظ محلياً وتُزامن عند عودة الاتصال.
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={refreshLocalDB}>
+                    <RefreshCw className="w-4 h-4 ml-1" />
+                    تحديث البيانات المحلية
+                  </Button>
                 </CardContent>
               </Card>
             </div>

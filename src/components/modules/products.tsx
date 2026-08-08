@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useState, useMemo, useRef } from 'react'
 import { apiFetch, formatEGP, formatNumber } from '@/lib/api'
+import { QRCodeDialog, BulkQRDialog } from '@/components/pos/qr-code-dialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import {
   Plus, Search, Pencil, Trash2, Download, Upload, Package, Filter, Image as ImageIcon, X, AlertTriangle,
+  QrCode, Tag,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -71,6 +73,11 @@ export function ProductsModule() {
   const [form, setForm] = useState<ProductFormState>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [importPreview, setImportPreview] = useState<any[] | null>(null)
+  const [qrProduct, setQrProduct] = useState<any>(null)
+  const [bulkQrOpen, setBulkQrOpen] = useState(false)
+  const [quickPriceProduct, setQuickPriceProduct] = useState<any>(null)
+  const [quickPriceValue, setQuickPriceValue] = useState('')
+  const [quickPriceSaving, setQuickPriceSaving] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadProducts = async () => {
@@ -118,6 +125,43 @@ export function ProductsModule() {
   }, [search, categoryFilter, activeFilter])
 
   const filtered = useMemo(() => products, [products])
+
+  // Hierarchical categories: parent rows with nested subcategories
+  const categoryHierarchy = useMemo(() => {
+    const roots = categories.filter((c) => !c.parentId)
+    return roots.map((root) => ({
+      ...root,
+      subcategories: categories.filter((c) => c.parentId === root.id),
+    }))
+  }, [categories])
+
+  const openQuickPrice = (p: any) => {
+    setQuickPriceProduct(p)
+    setQuickPriceValue(String(p.sellingPrice ?? 0))
+  }
+
+  const saveQuickPrice = async () => {
+    if (!quickPriceProduct) return
+    const newPrice = parseFloat(quickPriceValue)
+    if (isNaN(newPrice) || newPrice < 0) {
+      toast.error('السعر غير صالح')
+      return
+    }
+    setQuickPriceSaving(true)
+    try {
+      await apiFetch(`/products/${quickPriceProduct.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ sellingPrice: newPrice }),
+      })
+      toast.success('تم تحديث السعر')
+      setQuickPriceProduct(null)
+      loadProducts()
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setQuickPriceSaving(false)
+    }
+  }
 
   const openAdd = () => {
     setEditing(null)
@@ -349,6 +393,16 @@ export function ProductsModule() {
             <Download className="w-4 h-4" />
             تصدير CSV
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setBulkQrOpen(true)}
+            disabled={filtered.length === 0}
+            title="طباعة QR Code لجميع المنتجات المعروضة"
+          >
+            <QrCode className="w-4 h-4" />
+            طباعة QR للكل
+          </Button>
           <Button onClick={openAdd} size="sm">
             <Plus className="w-4 h-4" />
             إضافة منتج
@@ -398,16 +452,23 @@ export function ProductsModule() {
               />
             </div>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-full md:w-56">
+              <SelectTrigger className="w-full md:w-64">
                 <Filter className="w-4 h-4 ml-1 text-muted-foreground" />
                 <SelectValue placeholder="كل الفئات" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">كل الفئات</SelectItem>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.nameAr || c.name}
-                  </SelectItem>
+                {categoryHierarchy.map((parent) => (
+                  <Fragment key={parent.id}>
+                    <SelectItem value={parent.id}>
+                      {parent.nameAr || parent.name}
+                    </SelectItem>
+                    {parent.subcategories.map((child: any) => (
+                      <SelectItem key={child.id} value={child.id}>
+                        — {child.nameAr || child.name}
+                      </SelectItem>
+                    ))}
+                  </Fragment>
                 ))}
               </SelectContent>
             </Select>
@@ -514,6 +575,24 @@ export function ProductsModule() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center justify-center gap-1">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8"
+                                onClick={() => openQuickPrice(p)}
+                                title="تغيير السعر"
+                              >
+                                <Tag className="w-4 h-4 text-primary" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8"
+                                onClick={() => setQrProduct(p)}
+                                title="QR Code"
+                              >
+                                <QrCode className="w-4 h-4" />
+                              </Button>
                               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(p)}>
                                 <Pencil className="w-4 h-4" />
                               </Button>
@@ -554,10 +633,18 @@ export function ProductsModule() {
                         <span>المخزون: <span className={`font-bold ${stockColor}`}>{formatNumber(stock)}</span></span>
                         {p.category && <span className="text-muted-foreground">{p.category.nameAr || p.category.name}</span>}
                       </div>
-                      <div className="flex gap-2 mt-2">
+                      <div className="flex flex-wrap gap-2 mt-2">
                         <Button size="sm" variant="outline" onClick={() => openEdit(p)}>
                           <Pencil className="w-3.5 h-3.5" />
                           تعديل
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => openQuickPrice(p)}>
+                          <Tag className="w-3.5 h-3.5 text-primary" />
+                          تغيير السعر
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setQrProduct(p)}>
+                          <QrCode className="w-3.5 h-3.5" />
+                          QR
                         </Button>
                         <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleArchive(p)}>
                           <Trash2 className="w-3.5 h-3.5" />
@@ -607,8 +694,15 @@ export function ProductsModule() {
               <Select value={form.categoryId} onValueChange={(v) => setForm({ ...form, categoryId: v })}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="اختر الفئة" /></SelectTrigger>
                 <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.nameAr || c.name}</SelectItem>
+                  {categoryHierarchy.map((parent) => (
+                    <Fragment key={parent.id}>
+                      <SelectItem value={parent.id}>{parent.nameAr || parent.name}</SelectItem>
+                      {parent.subcategories.map((child: any) => (
+                        <SelectItem key={child.id} value={child.id}>
+                          — {child.nameAr || child.name}
+                        </SelectItem>
+                      ))}
+                    </Fragment>
                   ))}
                 </SelectContent>
               </Select>
@@ -771,6 +865,72 @@ export function ProductsModule() {
             <Button onClick={confirmImport}>
               <Upload className="w-4 h-4" />
               تأكيد الاستيراد ({importPreview?.length || 0})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* QR Code Dialog (single product) */}
+      <QRCodeDialog
+        open={!!qrProduct}
+        onOpenChange={(o) => !o && setQrProduct(null)}
+        product={qrProduct}
+      />
+
+      {/* Bulk QR Dialog (all filtered products) */}
+      <BulkQRDialog
+        open={bulkQrOpen}
+        onOpenChange={setBulkQrOpen}
+        products={filtered}
+      />
+
+      {/* Quick Price Edit Dialog */}
+      <Dialog open={!!quickPriceProduct} onOpenChange={(o) => !o && setQuickPriceProduct(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="w-5 h-5 text-primary" />
+              تغيير السعر السريع
+            </DialogTitle>
+            <DialogDescription>
+              {quickPriceProduct?.nameAr || quickPriceProduct?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-md border p-3 bg-muted/30">
+              <span className="text-sm text-muted-foreground">السعر الحالي</span>
+              <span className="font-bold pos-number">{formatEGP(quickPriceProduct?.sellingPrice ?? 0)}</span>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="quick-price">السعر الجديد</Label>
+              <Input
+                id="quick-price"
+                type="number"
+                step="0.01"
+                min="0"
+                autoFocus
+                value={quickPriceValue}
+                onChange={(e) => setQuickPriceValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveQuickPrice()
+                }}
+              />
+            </div>
+            {quickPriceProduct && !isNaN(parseFloat(quickPriceValue)) && (
+              <p className="text-xs text-muted-foreground text-center">
+                الفرق:{' '}
+                <span className={`font-bold pos-number ${parseFloat(quickPriceValue) >= (quickPriceProduct.sellingPrice ?? 0) ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatEGP(parseFloat(quickPriceValue) - (quickPriceProduct.sellingPrice ?? 0))}
+                </span>
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuickPriceProduct(null)}>
+              إلغاء
+            </Button>
+            <Button onClick={saveQuickPrice} disabled={quickPriceSaving}>
+              {quickPriceSaving ? 'جاري الحفظ...' : 'حفظ السعر'}
             </Button>
           </DialogFooter>
         </DialogContent>

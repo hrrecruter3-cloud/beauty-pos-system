@@ -1,0 +1,781 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useState, useMemo, useRef } from 'react'
+     4→import { apiFetch, formatEGP, formatNumber } from '@/lib/api'
+     5→import { Card, CardContent } from '@/components/ui/card'
+     6→import { Button } from '@/components/ui/button'
+     7→import { Input } from '@/components/ui/input'
+     8→import { Label } from '@/components/ui/label'
+     9→import { Textarea } from '@/components/ui/textarea'
+    10→import { Badge } from '@/components/ui/badge'
+    11→import { Switch } from '@/components/ui/switch'
+    12→import { Skeleton } from '@/components/ui/skeleton'
+    13→import { ScrollArea } from '@/components/ui/scroll-area'
+    14→import { Separator } from '@/components/ui/separator'
+    15→import {
+    16→  Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
+    17→} from '@/components/ui/table'
+    18→import {
+    19→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+    20→} from '@/components/ui/dialog'
+    21→import {
+    22→  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+    23→} from '@/components/ui/select'
+    24→import {
+    25→  Plus, Search, Pencil, Trash2, Download, Upload, Package, Filter, Image as ImageIcon, X, AlertTriangle,
+    26→} from 'lucide-react'
+    27→import { toast } from 'sonner'
+    28→
+    29→interface ProductFormState {
+    30→  name: string
+    31→  nameAr: string
+    32→  sku: string
+    33→  barcode: string
+    34→  categoryId: string
+    35→  brandId: string
+    36→  unitId: string
+    37→  supplierId: string
+    38→  purchaseCost: string
+    39→  sellingPrice: string
+    40→  wholesalePrice: string
+    41→  taxRate: string
+    42→  minStock: string
+    43→  reorderLevel: string
+    44→  openingStock: string
+    45→  image: string
+    46→  description: string
+    47→  active: boolean
+    48→}
+    49→
+    50→const EMPTY_FORM: ProductFormState = {
+    51→  name: '', nameAr: '', sku: '', barcode: '',
+    52→  categoryId: '', brandId: '', unitId: '', supplierId: '',
+    53→  purchaseCost: '0', sellingPrice: '0', wholesalePrice: '0', taxRate: '14',
+    54→  minStock: '0', reorderLevel: '5', openingStock: '0',
+    55→  image: '', description: '', active: true,
+    56→}
+    57→
+    58→export function ProductsModule() {
+    59→  const [products, setProducts] = useState<any[]>([])
+    60→  const [categories, setCategories] = useState<any[]>([])
+    61→  const [suppliers, setSuppliers] = useState<any[]>([])
+    62→  const [brands] = useState<any[]>([])
+    63→  const [units] = useState<any[]>([])
+    64→  const [loading, setLoading] = useState(true)
+    65→  const [error, setError] = useState<string | null>(null)
+    66→  const [search, setSearch] = useState('')
+    67→  const [categoryFilter, setCategoryFilter] = useState('all')
+    68→  const [activeFilter, setActiveFilter] = useState<string>('all')
+    69→  const [dialogOpen, setDialogOpen] = useState(false)
+    70→  const [editing, setEditing] = useState<any>(null)
+    71→  const [form, setForm] = useState<ProductFormState>(EMPTY_FORM)
+    72→  const [saving, setSaving] = useState(false)
+    73→  const [importPreview, setImportPreview] = useState<any[] | null>(null)
+    74→  const fileInputRef = useRef<HTMLInputElement>(null)
+    75→
+    76→  const loadProducts = async () => {
+    77→    setLoading(true)
+    78→    setError(null)
+    79→    try {
+    80→      const params = new URLSearchParams()
+    81→      if (search) params.set('search', search)
+    82→      if (categoryFilter !== 'all') params.set('categoryId', categoryFilter)
+    83→      if (activeFilter !== 'all') params.set('active', activeFilter)
+    84→      params.set('limit', '500')
+    85→      const data = await apiFetch(`/products?${params.toString()}`)
+    86→      setProducts(data || [])
+    87→    } catch (e: any) {
+    88→      setError(e.message)
+    89→      toast.error(e.message)
+    90→    } finally {
+    91→      setLoading(false)
+    92→    }
+    93→  }
+    94→
+    95→  const loadMeta = async () => {
+    96→    try {
+    97→      const [cats, sups] = await Promise.all([
+    98→        apiFetch('/categories'),
+    99→        apiFetch('/suppliers'),
+   100→      ])
+   101→      setCategories(cats || [])
+   102→      setSuppliers(sups || [])
+   103→    } catch (e: any) {
+   104→      // non-fatal
+   105→      console.warn('meta load failed', e)
+   106→    }
+   107→  }
+   108→
+   109→  useEffect(() => {
+   110→    loadProducts()
+   111→    loadMeta()
+   112→  }, [])
+   113→
+   114→  // debounced search
+   115→  useEffect(() => {
+   116→    const t = setTimeout(() => loadProducts(), 350)
+   117→    return () => clearTimeout(t)
+   118→  }, [search, categoryFilter, activeFilter])
+   119→
+   120→  const filtered = useMemo(() => products, [products])
+   121→
+   122→  const openAdd = () => {
+   123→    setEditing(null)
+   124→    setForm(EMPTY_FORM)
+   125→    setDialogOpen(true)
+   126→  }
+   127→
+   128→  const openEdit = (p: any) => {
+   129→    setEditing(p)
+   130→    setForm({
+   131→      name: p.name || '',
+   132→      nameAr: p.nameAr || '',
+   133→      sku: p.sku || '',
+   134→      barcode: p.barcode || '',
+   135→      categoryId: p.categoryId || '',
+   136→      brandId: p.brandId || '',
+   137→      unitId: p.unitId || '',
+   138→      supplierId: p.supplierId || '',
+   139→      purchaseCost: String(p.purchaseCost ?? 0),
+   140→      sellingPrice: String(p.sellingPrice ?? 0),
+   141→      wholesalePrice: String(p.wholesalePrice ?? 0),
+   142→      taxRate: String(p.taxRate ?? 0),
+   143→      minStock: String(p.minStock ?? 0),
+   144→      reorderLevel: String(p.reorderLevel ?? 0),
+   145→      openingStock: '0',
+   146→      image: p.image || '',
+   147→      description: p.description || '',
+   148→      active: p.active ?? true,
+   149→    })
+   150→    setDialogOpen(true)
+   151→  }
+   152→
+   153→  const handleSave = async () => {
+   154→    if (!form.name || !form.sku) {
+   155→      toast.error('الاسم ورمز SKU مطلوبان')
+   156→      return
+   157→    }
+   158→    setSaving(true)
+   159→    try {
+   160→      const body: any = { ...form }
+   161→      // Clean empty strings -> null for foreign keys
+   162→      ;['categoryId', 'brandId', 'unitId', 'supplierId'].forEach((k) => {
+   163→        if (!body[k]) body[k] = null
+   164→      })
+   165→      if (editing) {
+   166→        delete body.openingStock
+   167→        await apiFetch(`/products/${editing.id}`, {
+   168→          method: 'PUT',
+   169→          body: JSON.stringify(body),
+   170→        })
+   171→        toast.success('تم تحديث المنتج')
+   172→      } else {
+   173→        await apiFetch('/products', {
+   174→          method: 'POST',
+   175→          body: JSON.stringify(body),
+   176→        })
+   177→        toast.success('تم إنشاء المنتج بنجاح')
+   178→      }
+   179→      setDialogOpen(false)
+   180→      loadProducts()
+   181→    } catch (e: any) {
+   182→      toast.error(e.message)
+   183→    } finally {
+   184→      setSaving(false)
+   185→    }
+   186→  }
+   187→
+   188→  const handleArchive = async (p: any) => {
+   189→    if (!confirm(`هل أنت متأكد من أرشفة المنتج "${p.nameAr || p.name}"؟`)) return
+   190→    try {
+   191→      await apiFetch(`/products/${p.id}`, { method: 'DELETE' })
+   192→      toast.success('تم أرشفة المنتج')
+   193→      loadProducts()
+   194→    } catch (e: any) {
+   195→      toast.error(e.message)
+   196→    }
+   197→  }
+   198→
+   199→  const exportCSV = () => {
+   200→    const rows: any[] = filtered
+   201→    const headers = ['الاسم', 'الاسم عربي', 'SKU', 'الباركود', 'الفئة', 'سعر الشراء', 'سعر البيع', 'الجملة', 'الضريبة %', 'المخزون', 'الحد الأدنى', 'حد إعادة الطلب', 'الحالة']
+   202→    const lines = [headers.join(',')]
+   203→    rows.forEach((p) => {
+   204→      const stock = p.currentStock ?? 0
+   205→      const cat = p.category ? (p.category.nameAr || p.category.name) : ''
+   206→      const line = [
+   207→        `"${p.name || ''}"`,
+   208→        `"${p.nameAr || ''}"`,
+   209→        `"${p.sku || ''}"`,
+   210→        `"${p.barcode || ''}"`,
+   211→        `"${cat}"`,
+   212→        p.purchaseCost ?? 0,
+   213→        p.sellingPrice ?? 0,
+   214→        p.wholesalePrice ?? 0,
+   215→        p.taxRate ?? 0,
+   216→        stock,
+   217→        p.minStock ?? 0,
+   218→        p.reorderLevel ?? 0,
+   219→        p.active ? 'نشط' : 'مؤرشف',
+   220→      ]
+   221→      lines.push(line.join(','))
+   222→    })
+   223→    const csv = '\uFEFF' + lines.join('\n')
+   224→    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+   225→    const url = URL.createObjectURL(blob)
+   226→    const a = document.createElement('a')
+   227→    a.href = url
+   228→    a.download = `products-${new Date().toISOString().slice(0, 10)}.csv`
+   229→    a.click()
+   230→    URL.revokeObjectURL(url)
+   231→    toast.success(`تم تصدير ${rows.length} منتج`)
+   232→  }
+   233→
+   234→  const handleImportClick = () => fileInputRef.current?.click()
+   235→
+   236→  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   237→    const file = e.target.files?.[0]
+   238→    if (!file) return
+   239→    try {
+   240→      const text = await file.text()
+   241→      const lines = text.split(/\r?\n/).filter(Boolean)
+   242→      if (lines.length < 2) {
+   243→        toast.error('الملف فارغ أو غير صالح')
+   244→        return
+   245→      }
+   246→      // Skip header
+   247→      const parsed = lines.slice(1).map((line) => {
+   248→        // simple CSV parser handling quoted strings
+   249→        const cells: string[] = []
+   250→        let cur = ''
+   251→        let inQ = false
+   252→        for (let i = 0; i < line.length; i++) {
+   253→          const ch = line[i]
+   254→          if (ch === '"') inQ = !inQ
+   255→          else if (ch === ',' && !inQ) { cells.push(cur); cur = '' }
+   256→          else cur += ch
+   257→        }
+   258→        cells.push(cur)
+   259→        return cells
+   260→      }).map((c) => ({
+   261→        name: c[0] || '',
+   262→        nameAr: c[1] || '',
+   263→        sku: c[2] || '',
+   264→        barcode: c[3] || '',
+   265→        category: c[4] || '',
+   266→        purchaseCost: c[5] || '0',
+   267→        sellingPrice: c[6] || '0',
+   268→        wholesalePrice: c[7] || '0',
+   269→        taxRate: c[8] || '0',
+   270→        stock: c[9] || '0',
+   271→      }))
+   272→      setImportPreview(parsed)
+   273→      toast.success(`تم تحميل ${parsed.length} سجل`)
+   274→    } catch (err: any) {
+   275→      toast.error('فشل قراءة الملف: ' + err.message)
+   276→    } finally {
+   277→      // reset input so the same file can be re-selected
+   278→      if (fileInputRef.current) fileInputRef.current.value = ''
+   279→    }
+   280→  }
+   281→
+   282→  const confirmImport = async () => {
+   283→    if (!importPreview) return
+   284→    let ok = 0
+   285→    let fail = 0
+   286→    for (const row of importPreview) {
+   287→      try {
+   288→        await apiFetch('/products', {
+   289→          method: 'POST',
+   290→          body: JSON.stringify({
+   291→            name: row.name,
+   292→            nameAr: row.nameAr,
+   293→            sku: row.sku || `SKU-${Date.now()}-${ok}`,
+   294→            barcode: row.barcode || undefined,
+   295→            purchaseCost: row.purchaseCost,
+   296→            sellingPrice: row.sellingPrice,
+   297→            wholesalePrice: row.wholesalePrice,
+   298→            taxRate: row.taxRate,
+   299→            openingStock: row.stock,
+   300→            active: true,
+   301→          }),
+   302→        })
+   303→        ok++
+   304→      } catch {
+   305→        fail++
+   306→      }
+   307→    }
+   308→    toast.success(`تم استيراد ${ok} منتج${fail ? `, فشل ${fail}` : ''}`)
+   309→    setImportPreview(null)
+   310→    loadProducts()
+   311→  }
+   312→
+   313→  // Stats
+   314→  const stats = useMemo(() => {
+   315→    const total = filtered.length
+   316→    const active = filtered.filter((p) => p.active).length
+   317→    const lowStock = filtered.filter((p) => {
+   318→      const s = p.currentStock ?? 0
+   319→      return s <= (p.reorderLevel ?? 0) && s > 0
+   320→    }).length
+   321→    const outOfStock = filtered.filter((p) => (p.currentStock ?? 0) <= 0).length
+   322→    return { total, active, lowStock, outOfStock }
+   323→  }, [filtered])
+   324→
+   325→  return (
+   326→    <div className="p-4 md:p-6 space-y-6 max-w-[1600px] mx-auto">
+   327→      {/* Header */}
+   328→      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+   329→        <div>
+   330→          <h1 className="text-2xl font-bold flex items-center gap-2">
+   331→            <Package className="w-6 h-6 text-primary" />
+   332→            المنتجات
+   333→          </h1>
+   334→          <p className="text-muted-foreground text-sm">إدارة المنتجات والأسعار والمخزون</p>
+   335→        </div>
+   336→        <div className="flex flex-wrap gap-2">
+   337→          <input
+   338→            ref={fileInputRef}
+   339→            type="file"
+   340→            accept=".csv"
+   341→            className="hidden"
+   342→            onChange={handleImportFile}
+   343→          />
+   344→          <Button variant="outline" size="sm" onClick={handleImportClick}>
+   345→            <Upload className="w-4 h-4" />
+   346→            استيراد CSV
+   347→          </Button>
+   348→          <Button variant="outline" size="sm" onClick={exportCSV}>
+   349→            <Download className="w-4 h-4" />
+   350→            تصدير CSV
+   351→          </Button>
+   352→          <Button onClick={openAdd} size="sm">
+   353→            <Plus className="w-4 h-4" />
+   354→            إضافة منتج
+   355→          </Button>
+   356→        </div>
+   357→      </div>
+   358→
+   359→      {/* Stats */}
+   360→      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+   361→        <Card>
+   362→          <CardContent className="p-4">
+   363→            <p className="text-xs text-muted-foreground">إجمالي المنتجات</p>
+   364→            <p className="text-xl font-bold mt-1">{formatNumber(stats.total)}</p>
+   365→          </CardContent>
+   366→        </Card>
+   367→        <Card>
+   368→          <CardContent className="p-4">
+   369→            <p className="text-xs text-muted-foreground">نشط</p>
+   370→            <p className="text-xl font-bold mt-1 text-green-600">{formatNumber(stats.active)}</p>
+   371→          </CardContent>
+   372→        </Card>
+   373→        <Card>
+   374→          <CardContent className="p-4">
+   375→            <p className="text-xs text-muted-foreground">مخزون منخفض</p>
+   376→            <p className="text-xl font-bold mt-1 text-orange-600">{formatNumber(stats.lowStock)}</p>
+   377→          </CardContent>
+   378→        </Card>
+   379→        <Card>
+   380→          <CardContent className="p-4">
+   381→            <p className="text-xs text-muted-foreground">نفد المخزون</p>
+   382→            <p className="text-xl font-bold mt-1 text-red-600">{formatNumber(stats.outOfStock)}</p>
+   383→          </CardContent>
+   384→        </Card>
+   385→      </div>
+   386→
+   387→      {/* Filters */}
+   388→      <Card>
+   389→        <CardContent className="p-4">
+   390→          <div className="flex flex-col md:flex-row gap-3">
+   391→            <div className="relative flex-1">
+   392→              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+   393→              <Input
+   394→                placeholder="بحث بالاسم أو SKU أو الباركود..."
+   395→                value={search}
+   396→                onChange={(e) => setSearch(e.target.value)}
+   397→                className="pr-10"
+   398→              />
+   399→            </div>
+   400→            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+   401→              <SelectTrigger className="w-full md:w-56">
+   402→                <Filter className="w-4 h-4 ml-1 text-muted-foreground" />
+   403→                <SelectValue placeholder="كل الفئات" />
+   404→              </SelectTrigger>
+   405→              <SelectContent>
+   406→                <SelectItem value="all">كل الفئات</SelectItem>
+   407→                {categories.map((c) => (
+   408→                  <SelectItem key={c.id} value={c.id}>
+   409→                    {c.nameAr || c.name}
+   410→                  </SelectItem>
+   411→                ))}
+   412→              </SelectContent>
+   413→            </Select>
+   414→            <Select value={activeFilter} onValueChange={setActiveFilter}>
+   415→              <SelectTrigger className="w-full md:w-44">
+   416→                <SelectValue placeholder="الكل" />
+   417→              </SelectTrigger>
+   418→              <SelectContent>
+   419→                <SelectItem value="all">الكل</SelectItem>
+   420→                <SelectItem value="true">نشط</SelectItem>
+   421→                <SelectItem value="false">مؤرشف</SelectItem>
+   422→              </SelectContent>
+   423→            </Select>
+   424→          </div>
+   425→        </CardContent>
+   426→      </Card>
+   427→
+   428→      {/* Loading / Error / Empty / Table */}
+   429→      {loading ? (
+   430→        <Card>
+   431→          <CardContent className="p-4 space-y-2">
+   432→            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+   433→          </CardContent>
+   434→        </Card>
+   435→      ) : error ? (
+   436→        <Card>
+   437→          <CardContent className="p-8 text-center">
+   438→            <AlertTriangle className="w-10 h-10 text-red-500 mx-auto mb-2" />
+   439→            <p className="text-red-600 mb-3">{error}</p>
+   440→            <Button variant="outline" onClick={loadProducts}>إعادة المحاولة</Button>
+   441→          </CardContent>
+   442→        </Card>
+   443→      ) : filtered.length === 0 ? (
+   444→        <Card>
+   445→          <CardContent className="p-12 text-center">
+   446→            <Package className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+   447→            <p className="text-muted-foreground mb-4">لا توجد منتجات مطابقة</p>
+   448→            <Button onClick={openAdd}>
+   449→              <Plus className="w-4 h-4" />
+   450→              إضافة أول منتج
+   451→            </Button>
+   452→          </CardContent>
+   453→        </Card>
+   454→      ) : (
+   455→        <Card>
+   456→          <CardContent className="p-0">
+   457→            {/* Desktop table */}
+   458→            <div className="hidden md:block">
+   459→              <ScrollArea className="h-[calc(100vh-380px)] min-h-[400px]">
+   460→                <Table>
+   461→                  <TableHeader className="sticky top-0 bg-background z-10">
+   462→                    <TableRow>
+   463→                      <TableHead className="w-14 text-center">الصورة</TableHead>
+   464→                      <TableHead>الاسم</TableHead>
+   465→                      <TableHead>الباركود</TableHead>
+   466→                      <TableHead>SKU</TableHead>
+   467→                      <TableHead>الفئة</TableHead>
+   468→                      <TableHead className="text-left">السعر</TableHead>
+   469→                      <TableHead className="text-left">التكلفة</TableHead>
+   470→                      <TableHead className="text-center">المخزون</TableHead>
+   471→                      <TableHead className="text-center">الحالة</TableHead>
+   472→                      <TableHead className="text-center">إجراءات</TableHead>
+   473→                    </TableRow>
+   474→                  </TableHeader>
+   475→                  <TableBody>
+   476→                    {filtered.map((p) => {
+   477→                      const stock = p.currentStock ?? 0
+   478→                      const stockColor = stock <= 0 ? 'text-red-600' : stock <= (p.reorderLevel ?? 0) ? 'text-orange-600' : 'text-green-600'
+   479→                      return (
+   480→                        <TableRow key={p.id}>
+   481→                          <TableCell>
+   482→                            {p.image ? (
+   483→                              <img src={p.image} alt="" className="w-10 h-10 rounded object-cover border" />
+   484→                            ) : (
+   485→                              <div className="w-10 h-10 rounded bg-muted flex items-center justify-center">
+   486→                                <ImageIcon className="w-4 h-4 text-muted-foreground" />
+   487→                              </div>
+   488→                            )}
+   489→                          </TableCell>
+   490→                          <TableCell className="font-medium">
+   491→                            <div>{p.nameAr || p.name}</div>
+   492→                            {p.nameAr && p.name && (
+   493→                              <div className="text-xs text-muted-foreground">{p.name}</div>
+   494→                            )}
+   495→                          </TableCell>
+   496→                          <TableCell className="text-sm">{p.barcode || '—'}</TableCell>
+   497→                          <TableCell className="text-sm font-mono">{p.sku}</TableCell>
+   498→                          <TableCell>
+   499→                            {p.category ? (
+   500→                              <Badge variant="outline">{p.category.nameAr || p.category.name}</Badge>
+   501→                            ) : (
+   502→                              <span className="text-muted-foreground">—</span>
+   503→                            )}
+   504→                          </TableCell>
+   505→                          <TableCell className="text-left font-medium pos-number">{formatEGP(p.sellingPrice)}</TableCell>
+   506→                          <TableCell className="text-left text-sm text-muted-foreground pos-number">{formatEGP(p.purchaseCost)}</TableCell>
+   507→                          <TableCell className={`text-center font-bold pos-number ${stockColor}`}>{formatNumber(stock)}</TableCell>
+   508→                          <TableCell className="text-center">
+   509→                            {p.active ? (
+   510→                              <Badge className="bg-green-500/10 text-green-700 border-green-500/20">نشط</Badge>
+   511→                            ) : (
+   512→                              <Badge className="bg-gray-500/10 text-gray-700 border-gray-500/20">مؤرشف</Badge>
+   513→                            )}
+   514→                          </TableCell>
+   515→                          <TableCell>
+   516→                            <div className="flex items-center justify-center gap-1">
+   517→                              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(p)}>
+   518→                                <Pencil className="w-4 h-4" />
+   519→                              </Button>
+   520→                              <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:text-red-700" onClick={() => handleArchive(p)}>
+   521→                                <Trash2 className="w-4 h-4" />
+   522→                              </Button>
+   523→                            </div>
+   524→                          </TableCell>
+   525→                        </TableRow>
+   526→                      )
+   527→                    })}
+   528→                  </TableBody>
+   529→                </Table>
+   530→              </ScrollArea>
+   531→            </div>
+   532→
+   533→            {/* Mobile cards */}
+   534→            <div className="md:hidden divide-y">
+   535→              {filtered.map((p) => {
+   536→                const stock = p.currentStock ?? 0
+   537→                const stockColor = stock <= 0 ? 'text-red-600' : stock <= (p.reorderLevel ?? 0) ? 'text-orange-600' : 'text-green-600'
+   538→                return (
+   539→                  <div key={p.id} className="p-4 flex gap-3">
+   540→                    {p.image ? (
+   541→                      <img src={p.image} alt="" className="w-14 h-14 rounded object-cover border shrink-0" />
+   542→                    ) : (
+   543→                      <div className="w-14 h-14 rounded bg-muted flex items-center justify-center shrink-0">
+   544→                        <ImageIcon className="w-5 h-5 text-muted-foreground" />
+   545→                      </div>
+   546→                    )}
+   547→                    <div className="flex-1 min-w-0">
+   548→                      <div className="flex items-start justify-between gap-2">
+   549→                        <p className="font-medium truncate">{p.nameAr || p.name}</p>
+   550→                        <Badge variant="outline" className="shrink-0">{formatEGP(p.sellingPrice)}</Badge>
+   551→                      </div>
+   552→                      <p className="text-xs text-muted-foreground font-mono mt-0.5">{p.sku}{p.barcode ? ` · ${p.barcode}` : ''}</p>
+   553→                      <div className="flex items-center gap-3 mt-2 text-xs">
+   554→                        <span>المخزون: <span className={`font-bold ${stockColor}`}>{formatNumber(stock)}</span></span>
+   555→                        {p.category && <span className="text-muted-foreground">{p.category.nameAr || p.category.name}</span>}
+   556→                      </div>
+   557→                      <div className="flex gap-2 mt-2">
+   558→                        <Button size="sm" variant="outline" onClick={() => openEdit(p)}>
+   559→                          <Pencil className="w-3.5 h-3.5" />
+   560→                          تعديل
+   561→                        </Button>
+   562→                        <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleArchive(p)}>
+   563→                          <Trash2 className="w-3.5 h-3.5" />
+   564→                          أرشفة
+   565→                        </Button>
+   566→                      </div>
+   567→                    </div>
+   568→                  </div>
+   569→                )
+   570→              })}
+   571→            </div>
+   572→          </CardContent>
+   573→        </Card>
+   574→      )}
+   575→
+   576→      {/* Add/Edit Dialog */}
+   577→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   578→        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+   579→          <DialogHeader>
+   580→            <DialogTitle>{editing ? 'تعديل المنتج' : 'إضافة منتج جديد'}</DialogTitle>
+   581→            <DialogDescription>
+   582→              {editing ? `تعديل بيانات: ${editing.nameAr || editing.name}` : 'أدخل بيانات المنتج الجديد'}
+   583→            </DialogDescription>
+   584→          </DialogHeader>
+   585→
+   586→          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   587→            {/* Basic info */}
+   588→            <div className="space-y-1.5">
+   589→              <Label>الاسم (إنجليزي) *</Label>
+   590→              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Product Name" />
+   591→            </div>
+   592→            <div className="space-y-1.5">
+   593→              <Label>الاسم (عربي)</Label>
+   594→              <Input value={form.nameAr} onChange={(e) => setForm({ ...form, nameAr: e.target.value })} placeholder="اسم المنتج" />
+   595→            </div>
+   596→            <div className="space-y-1.5">
+   597→              <Label>SKU *</Label>
+   598→              <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="P-001" />
+   599→            </div>
+   600→            <div className="space-y-1.5">
+   601→              <Label>الباركود</Label>
+   602→              <Input value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="622..." />
+   603→            </div>
+   604→
+   605→            <div className="space-y-1.5">
+   606→              <Label>الفئة</Label>
+   607→              <Select value={form.categoryId} onValueChange={(v) => setForm({ ...form, categoryId: v })}>
+   608→                <SelectTrigger className="w-full"><SelectValue placeholder="اختر الفئة" /></SelectTrigger>
+   609→                <SelectContent>
+   610→                  {categories.map((c) => (
+   611→                    <SelectItem key={c.id} value={c.id}>{c.nameAr || c.name}</SelectItem>
+   612→                  ))}
+   613→                </SelectContent>
+   614→              </Select>
+   615→            </div>
+   616→            <div className="space-y-1.5">
+   617→              <Label>المورد</Label>
+   618→              <Select value={form.supplierId} onValueChange={(v) => setForm({ ...form, supplierId: v })}>
+   619→                <SelectTrigger className="w-full"><SelectValue placeholder="اختر المورد" /></SelectTrigger>
+   620→                <SelectContent>
+   621→                  {suppliers.map((s) => (
+   622→                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+   623→                  ))}
+   624→                </SelectContent>
+   625→              </Select>
+   626→            </div>
+   627→            <div className="space-y-1.5">
+   628→              <Label>الماركة</Label>
+   629→              <Select value={form.brandId} onValueChange={(v) => setForm({ ...form, brandId: v })}>
+   630→                <SelectTrigger className="w-full"><SelectValue placeholder="—" /></SelectTrigger>
+   631→                <SelectContent>
+   632→                  {brands.map((b) => (
+   633→                    <SelectItem key={b.id} value={b.id}>{b.nameAr || b.name}</SelectItem>
+   634→                  ))}
+   635→                </SelectContent>
+   636→              </Select>
+   637→            </div>
+   638→            <div className="space-y-1.5">
+   639→              <Label>الوحدة</Label>
+   640→              <Select value={form.unitId} onValueChange={(v) => setForm({ ...form, unitId: v })}>
+   641→                <SelectTrigger className="w-full"><SelectValue placeholder="—" /></SelectTrigger>
+   642→                <SelectContent>
+   643→                  {units.map((u) => (
+   644→                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+   645→                  ))}
+   646→                </SelectContent>
+   647→              </Select>
+   648→            </div>
+   649→          </div>
+   650→
+   651→          <Separator />
+   652→
+   653→          {/* Pricing */}
+   654→          <div>
+   655→            <p className="text-sm font-semibold mb-3">التسعير</p>
+   656→            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+   657→              <div className="space-y-1.5">
+   658→                <Label className="text-xs">سعر الشراء</Label>
+   659→                <Input type="number" step="0.01" value={form.purchaseCost} onChange={(e) => setForm({ ...form, purchaseCost: e.target.value })} />
+   660→              </div>
+   661→              <div className="space-y-1.5">
+   662→                <Label className="text-xs">سعر البيع</Label>
+   663→                <Input type="number" step="0.01" value={form.sellingPrice} onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} />
+   664→              </div>
+   665→              <div className="space-y-1.5">
+   666→                <Label className="text-xs">سعر الجملة</Label>
+   667→                <Input type="number" step="0.01" value={form.wholesalePrice} onChange={(e) => setForm({ ...form, wholesalePrice: e.target.value })} />
+   668→              </div>
+   669→              <div className="space-y-1.5">
+   670→                <Label className="text-xs">الضريبة %</Label>
+   671→                <Input type="number" step="0.01" value={form.taxRate} onChange={(e) => setForm({ ...form, taxRate: e.target.value })} />
+   672→              </div>
+   673→            </div>
+   674→          </div>
+   675→
+   676→          <Separator />
+   677→
+   678→          {/* Inventory */}
+   679→          <div>
+   680→            <p className="text-sm font-semibold mb-3">المخزون</p>
+   681→            <div className="grid grid-cols-3 gap-3">
+   682→              <div className="space-y-1.5">
+   683→                <Label className="text-xs">الحد الأدنى</Label>
+   684→                <Input type="number" value={form.minStock} onChange={(e) => setForm({ ...form, minStock: e.target.value })} />
+   685→              </div>
+   686→              <div className="space-y-1.5">
+   687→                <Label className="text-xs">حد إعادة الطلب</Label>
+   688→                <Input type="number" value={form.reorderLevel} onChange={(e) => setForm({ ...form, reorderLevel: e.target.value })} />
+   689→              </div>
+   690→              <div className="space-y-1.5">
+   691→                <Label className="text-xs">{editing ? 'المخزون الافتتاحي' : 'المخزون الافتتاحي *'}</Label>
+   692→                <Input
+   693→                  type="number"
+   694→                  value={form.openingStock}
+   695→                  onChange={(e) => setForm({ ...form, openingStock: e.target.value })}
+   696→                  disabled={!!editing}
+   697→                  placeholder={editing ? 'استخدم تسوية المخزون' : '0'}
+   698→                />
+   699→              </div>
+   700→            </div>
+   701→          </div>
+   702→
+   703→          <Separator />
+   704→
+   705→          {/* Other */}
+   706→          <div className="space-y-3">
+   707→            <div className="space-y-1.5">
+   708→              <Label>رابط الصورة</Label>
+   709→              <Input value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} placeholder="https://..." />
+   710→            </div>
+   711→            <div className="space-y-1.5">
+   712→              <Label>الوصف</Label>
+   713→              <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} placeholder="وصف المنتج..." />
+   714→            </div>
+   715→            <div className="flex items-center justify-between rounded-md border p-3">
+   716→              <div>
+   717→                <Label htmlFor="active-switch" className="cursor-pointer">المنتج نشط</Label>
+   718→                <p className="text-xs text-muted-foreground">المنتجات المؤرشفة لا تظهر في نقطة البيع</p>
+   719→              </div>
+   720→              <Switch id="active-switch" checked={form.active} onCheckedChange={(v) => setForm({ ...form, active: v })} />
+   721→            </div>
+   722→          </div>
+   723→
+   724→          <DialogFooter>
+   725→            <Button variant="outline" onClick={() => setDialogOpen(false)}>إلغاء</Button>
+   726→            <Button onClick={handleSave} disabled={saving}>
+   727→              {saving ? 'جاري الحفظ...' : editing ? 'حفظ التعديلات' : 'إضافة المنتج'}
+   728→            </Button>
+   729→          </DialogFooter>
+   730→        </DialogContent>
+   731→      </Dialog>
+   732→
+   733→      {/* Import Preview Dialog */}
+   734→      <Dialog open={!!importPreview} onOpenChange={(o) => !o && setImportPreview(null)}>
+   735→        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+   736→          <DialogHeader>
+   737→            <DialogTitle>معاينة الاستيراد</DialogTitle>
+   738→            <DialogDescription>
+   739→              تم تحليل {importPreview?.length || 0} سجل. سيتم إنشاء منتجات جديدة.
+   740→            </DialogDescription>
+   741→          </DialogHeader>
+   742→          <ScrollArea className="max-h-[60vh]">
+   743→            <Table>
+   744→              <TableHeader>
+   745→                <TableRow>
+   746→                  <TableHead>الاسم</TableHead>
+   747→                  <TableHead>SKU</TableHead>
+   748→                  <TableHead>الباركود</TableHead>
+   749→                  <TableHead className="text-left">السعر</TableHead>
+   750→                  <TableHead className="text-center">المخزون</TableHead>
+   751→                </TableRow>
+   752→              </TableHeader>
+   753→              <TableBody>
+   754→                {importPreview?.map((r, i) => (
+   755→                  <TableRow key={i}>
+   756→                    <TableCell>{r.nameAr || r.name || `—`}</TableCell>
+   757→                    <TableCell className="font-mono text-xs">{r.sku || '—'}</TableCell>
+   758→                    <TableCell className="text-xs">{r.barcode || '—'}</TableCell>
+   759→                    <TableCell className="text-left pos-number">{formatEGP(parseFloat(r.sellingPrice) || 0)}</TableCell>
+   760→                    <TableCell className="text-center">{r.stock}</TableCell>
+   761→                  </TableRow>
+   762→                ))}
+   763→              </TableBody>
+   764→            </Table>
+   765→          </ScrollArea>
+   766→          <DialogFooter>
+   767→            <Button variant="outline" onClick={() => setImportPreview(null)}>
+   768→              <X className="w-4 h-4" />
+   769→              إلغاء
+   770→            </Button>
+   771→            <Button onClick={confirmImport}>
+   772→              <Upload className="w-4 h-4" />
+   773→              تأكيد الاستيراد ({importPreview?.length || 0})
+   774→            </Button>
+   775→          </DialogFooter>
+   776→        </DialogContent>
+   777→      </Dialog>
+   778→    </div>
+   779→  )
+   780→}
+   781→

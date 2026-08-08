@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ShoppingCart, Loader2, Lock, User } from 'lucide-react'
+import { Sparkles, Loader2, Lock, User, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function LoginScreen() {
@@ -42,10 +42,10 @@ export function LoginScreen() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary text-primary-foreground mb-4 shadow-lg">
-            <ShoppingCart className="w-8 h-8" />
+            <Sparkles className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-bold">نظام نقاط البيع</h1>
-          <p className="text-muted-foreground mt-2">Professional POS System</p>
+          <h1 className="text-3xl font-bold">لمسة جمال</h1>
+          <p className="text-muted-foreground mt-2">نظام إدارة مستحضرات التجميل</p>
         </div>
 
         <Card className="shadow-xl">
@@ -64,7 +64,7 @@ export function LoginScreen() {
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                    placeholder="admin / manager / cashier"
+                    placeholder="admin / manager / cashier / platform"
                   />
                 </div>
               </div>
@@ -90,14 +90,14 @@ export function LoginScreen() {
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'دخول'}
               </Button>
 
-              <div className="grid grid-cols-3 gap-2 pt-4 border-t">
+              <div className="grid grid-cols-2 gap-2 pt-4 border-t">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => quickLogin('admin', 'admin123')}
                   className="flex-col h-auto py-2"
                 >
-                  <span className="font-bold">مدير</span>
+                  <span className="font-bold">مدير المتجر</span>
                   <span className="text-xs text-muted-foreground">admin</span>
                 </Button>
                 <Button
@@ -118,9 +118,19 @@ export function LoginScreen() {
                   <span className="font-bold">كاشير</span>
                   <span className="text-xs text-muted-foreground">cashier</span>
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => quickLogin('platform', 'platform123')}
+                  className="flex-col h-auto py-2 border-primary/50 text-primary"
+                >
+                  <Shield className="w-3 h-3" />
+                  <span className="font-bold">مدير المنصة</span>
+                  <span className="text-xs text-muted-foreground">platform</span>
+                </Button>
               </div>
               <p className="text-xs text-center text-muted-foreground pt-2">
-                كلمات المرور: admin123 / manager123 / cashier123
+                كلمات المرور: admin123 / manager123 / cashier123 / platform123
               </p>
             </div>
           </CardContent>

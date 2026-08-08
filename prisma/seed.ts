@@ -2,7 +2,7 @@ import { db } from '../src/lib/db'
 import bcrypt from 'bcryptjs'
 
 async function main() {
-  console.log('🌱 Seeding database...')
+  console.log('🌱 Seeding beauty store database...')
 
   // Clear existing data
   await db.syncQueue.deleteMany()
@@ -41,27 +41,38 @@ async function main() {
   const adminPass = await bcrypt.hash('admin123', 10)
   const managerPass = await bcrypt.hash('manager123', 10)
   const cashierPass = await bcrypt.hash('cashier123', 10)
+  const platformPass = await bcrypt.hash('platform123', 10)
+
+  // Platform Admin (manages the platform, not store details)
+  const platformAdmin = await db.user.create({
+    data: {
+      email: 'platform@beauty.com', username: 'platform', passwordHash: platformPass,
+      name: 'مدير المنصة', role: 'PLATFORM_ADMIN', phone: '01000000000',
+      permissions: JSON.stringify(['platform.all']),
+      pin: '0000',
+    }
+  })
 
   const admin = await db.user.create({
     data: {
-      email: 'admin@pos.com', username: 'admin', passwordHash: adminPass,
-      name: 'أحمد المدير', role: 'ADMIN', phone: '01000000001',
+      email: 'admin@beauty.com', username: 'admin', passwordHash: adminPass,
+      name: 'سارة مديرة المتجر', role: 'ADMIN', phone: '01000000001',
       permissions: JSON.stringify(['all']),
       pin: '1111',
     }
   })
   const manager = await db.user.create({
     data: {
-      email: 'manager@pos.com', username: 'manager', passwordHash: managerPass,
-      name: 'محمد المدير', role: 'MANAGER', phone: '01000000002',
+      email: 'manager@beauty.com', username: 'manager', passwordHash: managerPass,
+      name: 'منى المشرفة', role: 'MANAGER', phone: '01000000002',
       permissions: JSON.stringify(['sale.create','sale.refund','sale.discount','product.edit','inventory.adjust','report.view','profit.view','cash.open','cash.close']),
       pin: '2222',
     }
   })
   const cashier = await db.user.create({
     data: {
-      email: 'cashier@pos.com', username: 'cashier', passwordHash: cashierPass,
-      name: 'سارة الكاشير', role: 'CASHIER', phone: '01000000003',
+      email: 'cashier@beauty.com', username: 'cashier', passwordHash: cashierPass,
+      name: 'هدى الكاشيرة', role: 'CASHIER', phone: '01000000003',
       permissions: JSON.stringify(['sale.create','cash.open','cash.close']),
       pin: '3333',
     }
@@ -70,121 +81,199 @@ async function main() {
   // ============ STORE & WAREHOUSE ============
   const store = await db.store.create({
     data: {
-      name: 'متجر النجاح', address: 'شارع الجمهورية، القاهرة',
-      phone: '0223456789', email: 'info@success.com', currency: 'EGP',
-      receiptFooter: 'شكراً لزيارتكم - نتمنى لكم يوماً سعيداً',
+      name: 'لمسة جمال - مستحضرات تجميل', address: 'شارع التحرير، وسط البلد، القاهرة',
+      phone: '0223456789', email: 'info@lamsa-beauty.com', currency: 'EGP',
+      receiptFooter: 'لمسة جمال - جمالكِ يبدأ من هنا ✨',
     }
   })
   const warehouse = await db.warehouse.create({
-    data: { name: 'المخزن الرئيسي', storeId: store.id, location: 'القاهرة' }
+    data: { name: 'مخزن المستحضرات', storeId: store.id, location: 'القاهرة' }
   })
   const register = await db.register.create({
     data: { name: 'كاشير 1', storeId: store.id }
   })
 
-  // ============ CATEGORIES ============
-  const categories = [
-    { name: 'Drinks', nameAr: 'مشروبات', color: '#3b82f6', icon: 'CupSoda' },
-    { name: 'Snacks', nameAr: 'وجبات خفيفة', color: '#f59e0b', icon: 'Cookie' },
-    { name: 'Food', nameAr: 'طعام', color: '#10b981', icon: 'UtensilsCrossed' },
-    { name: 'Dairy', nameAr: 'ألبان', color: '#8b5cf6', icon: 'Milk' },
-    { name: 'Bakery', nameAr: 'مخبوزات', color: '#ec4899', icon: 'Wheat' },
-    { name: 'Household', nameAr: 'منزلية', color: '#14b8a6', icon: 'Home' },
-    { name: 'Personal Care', nameAr: 'عناية شخصية', color: '#ef4444', icon: 'Sparkles' },
-    { name: 'Other', nameAr: 'أخرى', color: '#6b7280', icon: 'Package' },
+  // ============ CATEGORIES (with subcategories) ============
+  // Main categories (parentId = null) and subcategories (parentId = main)
+  const mainCategories = [
+    { name: 'Perfumes', nameAr: 'العطور', color: '#e11d48', icon: 'Sparkles' },
+    { name: 'Makeup', nameAr: 'المكياج', color: '#ec4899', icon: 'Palette' },
+    { name: 'Skincare', nameAr: 'العناية بالبشرة', color: '#8b5cf6', icon: 'Heart' },
+    { name: 'Haircare', nameAr: 'العناية بالشعر', color: '#f59e0b', icon: 'Wind' },
+    { name: 'Body Care', nameAr: 'العناية بالجسم', color: '#10b981', icon: 'Flower2' },
+    { name: 'Beauty Tools', nameAr: 'أدوات التجميل', color: '#06b6d4', icon: 'Wrench' },
+    { name: 'Mens Grooming', nameAr: 'العناية بالرجل', color: '#6366f1', icon: 'User' },
+    { name: 'Offers', nameAr: 'العروض', color: '#ef4444', icon: 'Tag' },
   ]
-  const categoryRecords = await Promise.all(
-    categories.map(c => db.category.create({ data: c }))
+  const mainCatRecords = await Promise.all(
+    mainCategories.map(c => db.category.create({ data: c }))
   )
-  const catMap = Object.fromEntries(categoryRecords.map(c => [c.name, c]))
+  const mainCatMap = Object.fromEntries(mainCatRecords.map(c => [c.name, c]))
+
+  // Subcategories
+  const subcategories = [
+    // Perfumes
+    { name: 'Womens Perfume', nameAr: 'عطور نسائية', parent: 'Perfumes', color: '#e11d48' },
+    { name: 'Mens Perfume', nameAr: 'عطور رجالية', parent: 'Perfumes', color: '#be123c' },
+    { name: 'Body Mist', nameAr: 'بادي ميست', parent: 'Perfumes', color: '#fb7185' },
+    // Makeup
+    { name: 'Lip Products', nameAr: 'مكياج الشفاه', parent: 'Makeup', color: '#ec4899' },
+    { name: 'Eye Makeup', nameAr: 'مكياج العيون', parent: 'Makeup', color: '#db2777' },
+    { name: 'Face Makeup', nameAr: 'مكياج الوجه', parent: 'Makeup', color: '#f472b6' },
+    { name: 'Nail Polish', nameAr: 'طلاء الأظافر', parent: 'Makeup', color: '#be185d' },
+    // Skincare
+    { name: 'Cleansers', nameAr: 'منظفات', parent: 'Skincare', color: '#8b5cf6' },
+    { name: 'Moisturizers', nameAr: 'مرطبات', parent: 'Skincare', color: '#7c3aed' },
+    { name: 'Serums', nameAr: 'سيروم', parent: 'Skincare', color: '#a78bfa' },
+    { name: 'Sunscreen', nameAr: 'واقي شمس', parent: 'Skincare', color: '#c4b5fd' },
+    // Haircare
+    { name: 'Shampoo', nameAr: 'شامبو', parent: 'Haircare', color: '#f59e0b' },
+    { name: 'Conditioner', nameAr: 'بلسم', parent: 'Haircare', color: '#fbbf24' },
+    { name: 'Hair Treatments', nameAr: 'علاجات الشعر', parent: 'Haircare', color: '#fcd34d' },
+    // Body Care
+    { name: 'Body Lotion', nameAr: 'لوشن جسم', parent: 'Body Care', color: '#10b981' },
+    { name: 'Bath Products', nameAr: 'مستحضرات استحمام', parent: 'Body Care', color: '#34d399' },
+    // Beauty Tools
+    { name: 'Brushes', nameAr: 'فرش مكياج', parent: 'Beauty Tools', color: '#06b6d4' },
+    { name: 'Accessories', nameAr: 'إكسسوارات', parent: 'Beauty Tools', color: '#22d3ee' },
+  ]
+  const subCatRecords = await Promise.all(
+    subcategories.map(s => db.category.create({
+      data: { name: s.name, nameAr: s.nameAr, parentId: mainCatMap[s.parent].id, color: s.color }
+    }))
+  )
+
+  // Build a map of all categories by name (main + sub)
+  const allCategories = [...mainCatRecords, ...subCatRecords]
+  const catMap = Object.fromEntries(allCategories.map(c => [c.name, c]))
 
   // ============ BRANDS ============
-  const brands = ['Coca-Cola','Pepsi','Nestle','Lay\'s','Cadbury','Nabisco','Kellogg\'s','Local','Galaxy','Juhayna']
+  const brands = ['Chanel','Dior','Maybelline','L\'Oreal','MAC','Nivea','Neutrogena','Garnier','Olaplex','Tresemme','Pantene','Head & Shoulders','Calvin Klein','Gucci','Versace','Hugo Boss','Local','Wet n Wild','NYX','Fenty Beauty']
   const brandRecords = await Promise.all(brands.map(b => db.brand.create({ data: { name: b } })))
 
   // ============ UNITS ============
   const units = [
     { name: 'Piece', shortName: 'pcs' },
     { name: 'Box', shortName: 'box' },
-    { name: 'Pack', shortName: 'pack' },
     { name: 'Bottle', shortName: 'btl' },
-    { name: 'Can', shortName: 'can' },
-    { name: 'Bag', shortName: 'bag' },
-    { name: 'Kg', shortName: 'kg' },
+    { name: 'Tube', shortName: 'tube' },
+    { name: 'Jar', shortName: 'jar' },
+    { name: 'Pack', shortName: 'pack' },
+    { name: 'Set', shortName: 'set' },
+    { name: 'ml', shortName: 'ml' },
   ]
   const unitRecords = await Promise.all(units.map(u => db.unit.create({ data: u })))
   const unitMap = new Map(unitRecords.map(u => [u.name, u]))
 
   // ============ SUPPLIERS ============
   const suppliers = [
-    { name: 'شركة المشروبات المتحدة', phone: '01111111111', email: 'info@united-drinks.com', address: 'القاهرة', balance: 0 },
-    { name: 'مورد الألبان المصري', phone: '01122222222', email: 'info@egypt-dairy.com', address: 'الجيزة', balance: 5000 },
-    { name: 'شركة الوجبات الخفيفة', phone: '01133333333', email: 'info@snacks-co.com', address: 'الإسكندرية', balance: 0 },
-    { name: 'مخبوزات الشرق', phone: '01144444444', address: 'القاهرة', balance: 2500 },
-    { name: 'مورد المنتجات المنزلية', phone: '01155555555', email: 'info@home-prod.com', address: 'المنوفية', balance: 0 },
-    { name: 'شركة العناية الشخصية', phone: '01166666666', address: 'القاهرة', balance: 0 },
-    { name: 'المورد المتحد للأغذية', phone: '01177777777', email: 'info@united-foods.com', address: 'أسيوط', balance: 8000 },
-    { name: 'مصنع الحلويات', phone: '01188888888', address: 'القاهرة', balance: 0 },
-    { name: 'مورد المياه المعدنية', phone: '01199999999', address: 'العين السخنة', balance: 0 },
-    { name: 'شركة التوزيع الحديثة', phone: '01200000000', email: 'info@modern-dist.com', address: 'القاهرة', balance: 3000 },
+    { name: 'شركة الجمال للعطور', phone: '01111111111', email: 'info@beauty-perfumes.com', address: 'القاهرة', balance: 0 },
+    { name: 'مورد المستحضرات العالمية', phone: '01122222222', email: 'info@global-cosmetics.com', address: 'الجيزة', balance: 15000 },
+    { name: 'شركة المكياج الحديث', phone: '01133333333', email: 'info@modern-makeup.com', address: 'الإسكندرية', balance: 0 },
+    { name: 'مورد العناية بالبشرة', phone: '01144444444', address: 'القاهرة', balance: 8000 },
+    { name: 'شركة منتجات الشعر', phone: '01155555555', email: 'info@hair-pro.com', address: 'المنوفية', balance: 0 },
+    { name: 'مورد أدوات التجميل', phone: '01166666666', address: 'القاهرة', balance: 3000 },
+    { name: 'المورد المتحد للجمال', phone: '01177777777', email: 'info@united-beauty.com', address: 'أسيوط', balance: 12000 },
+    { name: 'شركة العطور الفاخرة', phone: '01188888888', address: 'القاهرة', balance: 0 },
+    { name: 'مورد منتجات الرجال', phone: '01199999999', address: 'القاهرة', balance: 0 },
+    { name: 'شركة التوزيع الجميل', phone: '01200000000', email: 'info@beauty-dist.com', address: 'القاهرة', balance: 5000 },
   ]
   const supplierRecords = await Promise.all(suppliers.map(s => db.supplier.create({ data: s })))
 
-  // ============ PRODUCTS (50+) ============
+  // ============ PRODUCTS (55+ beauty products) ============
+  // Format: { name, nameAr, cat (subcategory name), brand, unit, supplier index, cost, price, stock, barcode, min }
   const productsData = [
-    { name: 'Coca Cola 330ml', nameAr: 'كوكاكولا 330مل', cat: 'Drinks', brand: 'Coca-Cola', unit: 'Can', supplier: 0, cost: 5, price: 8, stock: 240, barcode: '5449000000996', min: 50 },
-    { name: 'Coca Cola 1L', nameAr: 'كوكاكولا 1 لتر', cat: 'Drinks', brand: 'Coca-Cola', unit: 'Bottle', supplier: 0, cost: 12, price: 18, stock: 120, barcode: '5449000011888', min: 30 },
-    { name: 'Coca Cola 2L', nameAr: 'كوكاكولا 2 لتر', cat: 'Drinks', brand: 'Coca-Cola', unit: 'Bottle', supplier: 0, cost: 20, price: 30, stock: 80, barcode: '5449000022777', min: 20 },
-    { name: 'Pepsi 330ml', nameAr: 'بيبسي 330مل', cat: 'Drinks', brand: 'Pepsi', unit: 'Can', supplier: 0, cost: 5, price: 8, stock: 200, barcode: '4060800001234', min: 50 },
-    { name: 'Pepsi 1L', nameAr: 'بيبسي 1 لتر', cat: 'Drinks', brand: 'Pepsi', unit: 'Bottle', supplier: 0, cost: 12, price: 18, stock: 90, barcode: '4060800012345', min: 30 },
-    { name: 'Sprite 330ml', nameAr: 'سبرايت 330مل', cat: 'Drinks', brand: 'Coca-Cola', unit: 'Can', supplier: 0, cost: 5, price: 8, stock: 180, barcode: '5449000033666', min: 40 },
-    { name: 'Fanta 330ml', nameAr: 'فانتا 330مل', cat: 'Drinks', brand: 'Coca-Cola', unit: 'Can', supplier: 0, cost: 5, price: 8, stock: 160, barcode: '5449000044555', min: 40 },
-    { name: 'Mountain Dew 330ml', nameAr: 'ماونتن ديو 330مل', cat: 'Drinks', brand: 'Pepsi', unit: 'Can', supplier: 0, cost: 5, price: 8, stock: 140, barcode: '4060800023456', min: 30 },
-    { name: 'Mineral Water 500ml', nameAr: 'مياه معدنية 500مل', cat: 'Drinks', brand: 'Nestle', unit: 'Bottle', supplier: 8, cost: 2.5, price: 5, stock: 500, barcode: '7622210448183', min: 100 },
-    { name: 'Mineral Water 1.5L', nameAr: 'مياه معدنية 1.5 لتر', cat: 'Drinks', brand: 'Nestle', unit: 'Bottle', supplier: 8, cost: 5, price: 9, stock: 300, barcode: '7622210448190', min: 80 },
-    { name: 'Orange Juice 1L', nameAr: 'عصير برتقال 1 لتر', cat: 'Drinks', brand: 'Juhayna', unit: 'Bottle', supplier: 0, cost: 15, price: 25, stock: 100, barcode: '6221033111111', min: 30 },
-    { name: 'Mango Juice 1L', nameAr: 'عصير مانجو 1 لتر', cat: 'Drinks', brand: 'Juhayna', unit: 'Bottle', supplier: 0, cost: 15, price: 25, stock: 85, barcode: '6221033222222', min: 30 },
-    { name: 'Lay\'s Classic 50g', nameAr: 'ليز كلاسيك 50جم', cat: 'Snacks', brand: 'Lay\'s', unit: 'Bag', supplier: 2, cost: 6, price: 10, stock: 300, barcode: '6042148000012', min: 60 },
-    { name: 'Lay\'s Cheese 50g', nameAr: 'ليز جبنة 50جم', cat: 'Snacks', brand: 'Lay\'s', unit: 'Bag', supplier: 2, cost: 6, price: 10, stock: 250, barcode: '6042148000029', min: 60 },
-    { name: 'Doritos 70g', nameAr: 'دوريتوس 70جم', cat: 'Snacks', brand: 'Lay\'s', unit: 'Bag', supplier: 2, cost: 8, price: 14, stock: 180, barcode: '6042148000036', min: 40 },
-    { name: 'Cheetos 50g', nameAr: 'سيتوس 50جم', cat: 'Snacks', brand: 'Lay\'s', unit: 'Bag', supplier: 2, cost: 6, price: 10, stock: 160, barcode: '6042148000043', min: 40 },
-    { name: 'Pringles 110g', nameAr: 'برينجلز 110جم', cat: 'Snacks', brand: 'Kellogg\'s', unit: 'Can', supplier: 2, cost: 20, price: 35, stock: 90, barcode: '5050083010101', min: 20 },
-    { name: 'Oreo Original', nameAr: 'أوريو', cat: 'Snacks', brand: 'Nabisco', unit: 'Pack', supplier: 7, cost: 8, price: 15, stock: 140, barcode: '7622210041111', min: 30 },
-    { name: 'Chocolate Wafer', nameAr: 'ويفر شوكولاتة', cat: 'Snacks', brand: 'Cadbury', unit: 'Pack', supplier: 7, cost: 5, price: 9, stock: 200, barcode: '7622210042222', min: 50 },
-    { name: 'Galaxy Chocolate 45g', nameAr: 'جالاكسي 45جم', cat: 'Snacks', brand: 'Galaxy', unit: 'Piece', supplier: 7, cost: 7, price: 12, stock: 130, barcode: '7622210043333', min: 30 },
-    { name: 'KitKat 4 Finger', nameAr: 'كيت كات', cat: 'Snacks', brand: 'Nestle', unit: 'Piece', supplier: 7, cost: 6, price: 11, stock: 110, barcode: '7613034626844', min: 30 },
-    { name: 'Croissant Pack', nameAr: 'باكيت كرواسون', cat: 'Bakery', brand: 'Local', unit: 'Pack', supplier: 3, cost: 8, price: 15, stock: 70, barcode: '2000000000017', min: 20 },
-    { name: 'White Bread', nameAr: 'خبز أبيض', cat: 'Bakery', brand: 'Local', unit: 'Piece', supplier: 3, cost: 3, price: 6, stock: 150, barcode: '2000000000024', min: 50 },
-    { name: 'Buns Pack', nameAr: 'باكيت خبز برجر', cat: 'Bakery', brand: 'Local', unit: 'Pack', supplier: 3, cost: 5, price: 10, stock: 80, barcode: '2000000000031', min: 20 },
-    { name: 'Cake Chocolate', nameAr: 'كيك شوكولاتة', cat: 'Bakery', brand: 'Local', unit: 'Piece', supplier: 7, cost: 15, price: 28, stock: 45, barcode: '2000000000048', min: 15 },
-    { name: 'Milk 1L', nameAr: 'لبن 1 لتر', cat: 'Dairy', brand: 'Juhayna', unit: 'Bottle', supplier: 1, cost: 18, price: 28, stock: 100, barcode: '6221033000111', min: 30 },
-    { name: 'Yogurt 150g', nameAr: 'زبادي 150جم', cat: 'Dairy', brand: 'Juhayna', unit: 'Piece', supplier: 1, cost: 5, price: 9, stock: 180, barcode: '6221033000222', min: 50 },
-    { name: 'Cheese Portions 12', nameAr: 'جبنة شرائح 12', cat: 'Dairy', brand: 'Nestle', unit: 'Pack', supplier: 1, cost: 25, price: 42, stock: 60, barcode: '7622210990011', min: 15 },
-    { name: 'Butter 200g', nameAr: 'زبدة 200جم', cat: 'Dairy', brand: 'Nestle', unit: 'Pack', supplier: 1, cost: 30, price: 48, stock: 50, barcode: '7622210990022', min: 15 },
-    { name: 'Cream 200ml', nameAr: 'قشطة 200مل', cat: 'Dairy', brand: 'Nestle', unit: 'Can', supplier: 1, cost: 12, price: 20, stock: 90, barcode: '7622210990033', min: 20 },
-    { name: 'Eggs 30 Pack', nameAr: 'بيض 30 بيضة', cat: 'Dairy', brand: 'Local', unit: 'Box', supplier: 6, cost: 60, price: 95, stock: 40, barcode: '2000000000055', min: 10 },
-    { name: 'Corn Flakes 500g', nameAr: 'كورن فليكس 500جم', cat: 'Food', brand: 'Kellogg\'s', unit: 'Box', supplier: 6, cost: 35, price: 60, stock: 55, barcode: '5050083011111', min: 15 },
-    { name: 'Pasta 500g', nameAr: 'مكرونة 500جم', cat: 'Food', brand: 'Local', unit: 'Pack', supplier: 6, cost: 8, price: 15, stock: 200, barcode: '2000000000062', min: 50 },
-    { name: 'Rice 1Kg', nameAr: 'أرز 1 كجم', cat: 'Food', brand: 'Local', unit: 'Kg', supplier: 6, cost: 20, price: 32, stock: 150, barcode: '2000000000079', min: 40 },
-    { name: 'Sugar 1Kg', nameAr: 'سكر 1 كجم', cat: 'Food', brand: 'Local', unit: 'Kg', supplier: 6, cost: 22, price: 35, stock: 130, barcode: '2000000000086', min: 40 },
-    { name: 'Cooking Oil 1L', nameAr: 'زيت طعام 1 لتر', cat: 'Food', brand: 'Local', unit: 'Bottle', supplier: 6, cost: 40, price: 62, stock: 90, barcode: '2000000000093', min: 25 },
-    { name: 'Tea 250g', nameAr: 'شاي 250جم', cat: 'Food', brand: 'Local', unit: 'Pack', supplier: 6, cost: 25, price: 42, stock: 100, barcode: '2000000000109', min: 30 },
-    { name: 'Coffee 200g', nameAr: 'قهوة 200جم', cat: 'Food', brand: 'Nestle', unit: 'Pack', supplier: 6, cost: 45, price: 75, stock: 70, barcode: '7622210880011', min: 20 },
-    { name: 'Salt 1Kg', nameAr: 'ملح 1 كجم', cat: 'Food', brand: 'Local', unit: 'Kg', supplier: 6, cost: 5, price: 10, stock: 200, barcode: '2000000000116', min: 50 },
-    { name: 'Tuna Can', nameAr: 'تونة معلبة', cat: 'Food', brand: 'Local', unit: 'Can', supplier: 6, cost: 15, price: 25, stock: 120, barcode: '2000000000123', min: 30 },
-    { name: 'Tomato Sauce', nameAr: 'صلصة طماطم', cat: 'Food', brand: 'Local', unit: 'Can', supplier: 6, cost: 8, price: 14, stock: 140, barcode: '2000000000130', min: 30 },
-    { name: 'Instant Noodles', nameAr: 'شوربة سريعة', cat: 'Food', brand: 'Local', unit: 'Pack', supplier: 6, cost: 3, price: 6, stock: 300, barcode: '2000000000147', min: 80 },
-    { name: 'Biscuits Assorted', nameAr: 'بسكويت متنوع', cat: 'Snacks', brand: 'Local', unit: 'Pack', supplier: 7, cost: 4, price: 7, stock: 250, barcode: '2000000000154', min: 60 },
-    { name: 'Soap Bar', nameAr: 'صابون', cat: 'Personal Care', brand: 'Local', unit: 'Piece', supplier: 5, cost: 6, price: 12, stock: 180, barcode: '3000000000018', min: 40 },
-    { name: 'Shampoo 400ml', nameAr: 'شامبو 400مل', cat: 'Personal Care', brand: 'Local', unit: 'Bottle', supplier: 5, cost: 25, price: 45, stock: 80, barcode: '3000000000025', min: 20 },
-    { name: 'Toothpaste', nameAr: 'معجون أسنان', cat: 'Personal Care', brand: 'Nestle', unit: 'Piece', supplier: 5, cost: 15, price: 28, stock: 100, barcode: '3000000000032', min: 25 },
-    { name: 'Toilet Paper 6', nameAr: 'مناديل 6 لفات', cat: 'Household', brand: 'Local', unit: 'Pack', supplier: 4, cost: 30, price: 50, stock: 70, barcode: '4000000000015', min: 20 },
-    { name: 'Dish Soap 500ml', nameAr: 'سائل غسيل 500مل', cat: 'Household', brand: 'Local', unit: 'Bottle', supplier: 4, cost: 12, price: 22, stock: 90, barcode: '4000000000022', min: 25 },
-    { name: 'Detergent 1Kg', nameAr: 'مسحوق غسيل 1كجم', cat: 'Household', brand: 'Local', unit: 'Pack', supplier: 4, cost: 35, price: 58, stock: 60, barcode: '4000000000039', min: 15 },
-    { name: 'Trash Bags 30', nameAr: 'أكياس قمامة 30', cat: 'Household', brand: 'Local', unit: 'Pack', supplier: 4, cost: 15, price: 28, stock: 85, barcode: '4000000000046', min: 20 },
-    { name: 'Aluminum Foil', nameAr: 'ورق ألمنيوم', cat: 'Household', brand: 'Local', unit: 'Pack', supplier: 4, cost: 18, price: 32, stock: 50, barcode: '4000000000053', min: 15 },
-    { name: 'Matches', nameAr: 'كبريت', cat: 'Other', brand: 'Local', unit: 'Box', supplier: 9, cost: 1, price: 3, stock: 300, barcode: '5000000000012', min: 100 },
-    { name: 'Lighter', nameAr: 'ولاعة', cat: 'Other', brand: 'Local', unit: 'Piece', supplier: 9, cost: 3, price: 7, stock: 150, barcode: '5000000000029', min: 50 },
+    // === PERFUMES ===
+    { name: 'Chanel No.5 EDP 100ml', nameAr: 'شانيل رقم 5 100مل', cat: 'Womens Perfume', brand: 'Chanel', unit: 'Bottle', supplier: 7, cost: 1800, price: 3200, stock: 25, barcode: '3145890012345', min: 5 },
+    { name: 'Dior J\'adore EDP 100ml', nameAr: 'ديور جادور 100مل', cat: 'Womens Perfume', brand: 'Dior', unit: 'Bottle', supplier: 7, cost: 1600, price: 2900, stock: 30, barcode: '3348900012345', min: 5 },
+    { name: 'Gucci Bloom 100ml', nameAr: 'غوتشي بلوم 100مل', cat: 'Womens Perfume', brand: 'Gucci', unit: 'Bottle', supplier: 7, cost: 1500, price: 2700, stock: 20, barcode: '7370520012345', min: 5 },
+    { name: 'Calvin Klein Eternity 100ml', nameAr: 'كالفن كلاين إيترنتي 100مل', cat: 'Mens Perfume', brand: 'Calvin Klein', unit: 'Bottle', supplier: 7, cost: 1200, price: 2200, stock: 35, barcode: '8830010012345', min: 8 },
+    { name: 'Hugo Boss Bottled 100ml', nameAr: 'هوغو بوس بوتلد 100مل', cat: 'Mens Perfume', brand: 'Hugo Boss', unit: 'Bottle', supplier: 7, cost: 1300, price: 2400, stock: 28, barcode: '7370520012346', min: 6 },
+    { name: 'Versace Eros 100ml', nameAr: 'فرساتشي إيروس 100مل', cat: 'Mens Perfume', brand: 'Versace', unit: 'Bottle', supplier: 7, cost: 1400, price: 2500, stock: 22, barcode: '8011000012345', min: 5 },
+    { name: 'Body Mist Vanilla 250ml', nameAr: 'بادي ميست فانيلا 250مل', cat: 'Body Mist', brand: 'Local', unit: 'Bottle', supplier: 0, cost: 120, price: 250, stock: 80, barcode: '2000000000017', min: 20 },
+    { name: 'Body Mist Rose 250ml', nameAr: 'بادي ميست ورد 250مل', cat: 'Body Mist', brand: 'Local', unit: 'Bottle', supplier: 0, cost: 120, price: 250, stock: 75, barcode: '2000000000024', min: 20 },
+
+    // === MAKEUP - LIPS ===
+    { name: 'Matte Lipstick Red', nameAr: 'أحمر شفاه مطفي أحمر', cat: 'Lip Products', brand: 'MAC', unit: 'Piece', supplier: 2, cost: 250, price: 480, stock: 60, barcode: '7736020012345', min: 15 },
+    { name: 'Matte Lipstick Pink', nameAr: 'أحمر شفاه مطفي وردي', cat: 'Lip Products', brand: 'MAC', unit: 'Piece', supplier: 2, cost: 250, price: 480, stock: 55, barcode: '7736020012346', min: 15 },
+    { name: 'Lip Gloss Clear', nameAr: 'جلو شفاف للشفاه', cat: 'Lip Products', brand: 'Maybelline', unit: 'Tube', supplier: 2, cost: 90, price: 180, stock: 90, barcode: '8840010012345', min: 20 },
+    { name: 'Lip Liner Nude', nameAr: 'قلم تحديد شفاه نود', cat: 'Lip Products', brand: 'NYX', unit: 'Piece', supplier: 2, cost: 70, price: 140, stock: 100, barcode: '8008970012345', min: 25 },
+    { name: 'Liquid Lipstick Mauve', nameAr: 'أحمر شفاه سائل موف', cat: 'Lip Products', brand: 'Fenty Beauty', unit: 'Tube', supplier: 2, cost: 180, price: 350, stock: 40, barcode: '8840010012346', min: 10 },
+
+    // === MAKEUP - EYES ===
+    { name: 'Mascara Volume', nameAr: 'ماسكارا فوليوم', cat: 'Eye Makeup', brand: 'Maybelline', unit: 'Tube', supplier: 2, cost: 110, price: 220, stock: 85, barcode: '8840010012347', min: 20 },
+    { name: 'Mascara Waterproof', nameAr: 'ماسكارا ووتربروف', cat: 'Eye Makeup', brand: 'L\'Oreal', unit: 'Tube', supplier: 2, cost: 130, price: 250, stock: 70, barcode: '8840010012348', min: 18 },
+    { name: 'Eyeliner Black', nameAr: 'آيلاينر أسود', cat: 'Eye Makeup', brand: 'Maybelline', unit: 'Tube', supplier: 2, cost: 80, price: 160, stock: 95, barcode: '8840010012349', min: 20 },
+    { name: 'Eyeshadow Palette Nude', nameAr: 'باليت ظلال عيون نود', cat: 'Eye Makeup', brand: 'NYX', unit: 'Box', supplier: 2, cost: 220, price: 420, stock: 45, barcode: '8008970012346', min: 10 },
+    { name: 'Eyeshadow Palette Colorful', nameAr: 'باليت ظلال عيون ملون', cat: 'Eye Makeup', brand: 'Wet n Wild', unit: 'Box', supplier: 2, cost: 180, price: 350, stock: 38, barcode: '8008970012347', min: 10 },
+    { name: 'Eyebrow Pencil Brown', nameAr: 'قلم حواجب بني', cat: 'Eye Makeup', brand: 'MAC', unit: 'Piece', supplier: 2, cost: 140, price: 280, stock: 65, barcode: '7736020012347', min: 15 },
+    { name: 'False Eyelashes Set', nameAr: 'طقم رموش صناعية', cat: 'Eye Makeup', brand: 'Local', unit: 'Pack', supplier: 2, cost: 50, price: 120, stock: 120, barcode: '2000000000031', min: 30 },
+
+    // === MAKEUP - FACE ===
+    { name: 'Foundation Light', nameAr: 'فاونديشن فاتح', cat: 'Face Makeup', brand: 'MAC', unit: 'Bottle', supplier: 2, cost: 350, price: 680, stock: 50, barcode: '7736020012348', min: 12 },
+    { name: 'Foundation Medium', nameAr: 'فاونديشن متوسط', cat: 'Face Makeup', brand: 'MAC', unit: 'Bottle', supplier: 2, cost: 350, price: 680, stock: 48, barcode: '7736020012349', min: 12 },
+    { name: 'Foundation Dark', nameAr: 'فاونديشن غامق', cat: 'Face Makeup', brand: 'L\'Oreal', unit: 'Bottle', supplier: 2, cost: 280, price: 550, stock: 42, barcode: '8840010012350', min: 10 },
+    { name: 'BB Cream Natural', nameAr: 'بي بي كريم طبيعي', cat: 'Face Makeup', brand: 'Garnier', unit: 'Tube', supplier: 3, cost: 150, price: 290, stock: 70, barcode: '3600010012345', min: 15 },
+    { name: 'Compact Powder', nameAr: 'بودرة مضغوطة', cat: 'Face Makeup', brand: 'Maybelline', unit: 'Box', supplier: 2, cost: 160, price: 310, stock: 60, barcode: '8840010012351', min: 15 },
+    { name: 'Concealer Medium', nameAr: 'كونسيلر متوسط', cat: 'Face Makeup', brand: 'Maybelline', unit: 'Tube', supplier: 2, cost: 130, price: 260, stock: 55, barcode: '8840010012352', min: 12 },
+    { name: 'Blush Pink', nameAr: 'بلاشر وردي', cat: 'Face Makeup', brand: 'MAC', unit: 'Box', supplier: 2, cost: 200, price: 390, stock: 40, barcode: '7736020012350', min: 10 },
+    { name: 'Highlighter Gold', nameAr: 'هايلايتر ذهبي', cat: 'Face Makeup', brand: 'Wet n Wild', unit: 'Box', supplier: 2, cost: 140, price: 280, stock: 45, barcode: '8008970012348', min: 10 },
+    { name: 'Setting Spray', nameAr: 'سبراي تثبيت المكياج', cat: 'Face Makeup', brand: 'NYX', unit: 'Bottle', supplier: 2, cost: 170, price: 330, stock: 50, barcode: '8008970012349', min: 12 },
+    { name: 'Primer', nameAr: 'برايمر للوجه', cat: 'Face Makeup', brand: 'L\'Oreal', unit: 'Tube', supplier: 2, cost: 200, price: 390, stock: 38, barcode: '8840010012353', min: 10 },
+
+    // === MAKEUP - NAILS ===
+    { name: 'Nail Polish Red', nameAr: 'طلاء أظافر أحمر', cat: 'Nail Polish', brand: 'Local', unit: 'Bottle', supplier: 2, cost: 35, price: 75, stock: 150, barcode: '2000000000048', min: 30 },
+    { name: 'Nail Polish Pink', nameAr: 'طلاء أظافر وردي', cat: 'Nail Polish', brand: 'Local', unit: 'Bottle', supplier: 2, cost: 35, price: 75, stock: 140, barcode: '2000000000055', min: 30 },
+    { name: 'Nail Polish Black', nameAr: 'طلاء أظافر أسود', cat: 'Nail Polish', brand: 'Local', unit: 'Bottle', supplier: 2, cost: 35, price: 75, stock: 130, barcode: '2000000000062', min: 30 },
+    { name: 'Nail Polish Remover', nameAr: 'مزيل طلاء الأظافر', cat: 'Nail Polish', brand: 'Local', unit: 'Bottle', supplier: 2, cost: 25, price: 55, stock: 100, barcode: '2000000000079', min: 25 },
+    { name: 'Nail Polish Set 6', nameAr: 'طقم طلاء أظافر 6 ألوان', cat: 'Nail Polish', brand: 'Local', unit: 'Set', supplier: 2, cost: 150, price: 300, stock: 40, barcode: '2000000000086', min: 10 },
+
+    // === SKINCARE ===
+    { name: 'Facial Cleanser 200ml', nameAr: 'غسول وجه 200مل', cat: 'Cleansers', brand: 'Neutrogena', unit: 'Bottle', supplier: 3, cost: 120, price: 240, stock: 80, barcode: '3000000000018', min: 20 },
+    { name: 'Micellar Water 400ml', nameAr: 'ماء ميسيلار 400مل', cat: 'Cleansers', brand: 'Garnier', unit: 'Bottle', supplier: 3, cost: 100, price: 200, stock: 90, barcode: '3600010012346', min: 20 },
+    { name: 'Face Moisturizer 50ml', nameAr: 'مرطب وجه 50مل', cat: 'Moisturizers', brand: 'Nivea', unit: 'Jar', supplier: 3, cost: 140, price: 280, stock: 65, barcode: '4000010012345', min: 15 },
+    { name: 'Day Cream SPF 50ml', nameAr: 'كريم نهار 50مل', cat: 'Moisturizers', brand: 'Neutrogena', unit: 'Jar', supplier: 3, cost: 180, price: 350, stock: 55, barcode: '3000000000025', min: 12 },
+    { name: 'Night Cream 50ml', nameAr: 'كريم ليل 50مل', cat: 'Moisturizers', brand: 'Nivea', unit: 'Jar', supplier: 3, cost: 190, price: 370, stock: 48, barcode: '4000010012346', min: 12 },
+    { name: 'Vitamin C Serum 30ml', nameAr: 'سيروم فيتامين سي 30مل', cat: 'Serums', brand: 'L\'Oreal', unit: 'Bottle', supplier: 3, cost: 250, price: 490, stock: 40, barcode: '8840010012354', min: 10 },
+    { name: 'Hyaluronic Acid Serum', nameAr: 'سيروم حمض الهيالورونيك', cat: 'Serums', brand: 'Neutrogena', unit: 'Bottle', supplier: 3, cost: 220, price: 430, stock: 35, barcode: '3000000000032', min: 8 },
+    { name: 'Retinol Serum 30ml', nameAr: 'سيروم ريتينول 30مل', cat: 'Serums', brand: 'L\'Oreal', unit: 'Bottle', supplier: 3, cost: 280, price: 550, stock: 30, barcode: '8840010012355', min: 8 },
+    { name: 'Sunscreen SPF50 100ml', nameAr: 'واقي شمس SPF50 100مل', cat: 'Sunscreen', brand: 'Neutrogena', unit: 'Bottle', supplier: 3, cost: 200, price: 390, stock: 70, barcode: '3000000000049', min: 15 },
+    { name: 'Sunscreen SPF30 100ml', nameAr: 'واقي شمس SPF30 100مل', cat: 'Sunscreen', brand: 'Nivea', unit: 'Bottle', supplier: 3, cost: 170, price: 330, stock: 65, barcode: '4000010012347', min: 15 },
+    { name: 'Face Toner 200ml', nameAr: 'تونر وجه 200مل', cat: 'Cleansers', brand: 'Garnier', unit: 'Bottle', supplier: 3, cost: 110, price: 220, stock: 60, barcode: '3600010012347', min: 15 },
+    { name: 'Eye Cream 15ml', nameAr: 'كريم العين 15مل', cat: 'Moisturizers', brand: 'Neutrogena', unit: 'Jar', supplier: 3, cost: 230, price: 450, stock: 42, barcode: '3000000000056', min: 10 },
+
+    // === HAIRCARE ===
+    { name: 'Shampoo Moisturizing 400ml', nameAr: 'شامبو مرطب 400مل', cat: 'Shampoo', brand: 'Pantene', unit: 'Bottle', supplier: 4, cost: 90, price: 180, stock: 100, barcode: '5000000000012', min: 25 },
+    { name: 'Shampoo Anti Dandruff 400ml', nameAr: 'شامبو مضاد للقشرة 400مل', cat: 'Shampoo', brand: 'Head & Shoulders', unit: 'Bottle', supplier: 4, cost: 95, price: 190, stock: 90, barcode: '5000000000029', min: 25 },
+    { name: 'Shampoo Repair 400ml', nameAr: 'شامبو إصلاح 400مل', cat: 'Shampoo', brand: 'Tresemme', unit: 'Bottle', supplier: 4, cost: 100, price: 200, stock: 85, barcode: '5000000000036', min: 20 },
+    { name: 'Conditioner 400ml', nameAr: 'بلسم 400مل', cat: 'Conditioner', brand: 'Pantene', unit: 'Bottle', supplier: 4, cost: 95, price: 190, stock: 88, barcode: '5000000000043', min: 20 },
+    { name: 'Hair Mask 300ml', nameAr: 'ماسك شعر 300مل', cat: 'Hair Treatments', brand: 'Olaplex', unit: 'Jar', supplier: 4, cost: 350, price: 680, stock: 30, barcode: '5000000000050', min: 8 },
+    { name: 'Hair Oil 100ml', nameAr: 'زيت شعر 100مل', cat: 'Hair Treatments', brand: 'Local', unit: 'Bottle', supplier: 4, cost: 80, price: 160, stock: 95, barcode: '2000000000093', min: 20 },
+    { name: 'Hair Serum 100ml', nameAr: 'سيروم شعر 100مل', cat: 'Hair Treatments', brand: 'Tresemme', unit: 'Bottle', supplier: 4, cost: 130, price: 260, stock: 55, barcode: '5000000000067', min: 12 },
+    { name: 'Heat Protectant 200ml', nameAr: 'حماية من الحرارة 200مل', cat: 'Hair Treatments', brand: 'Tresemme', unit: 'Bottle', supplier: 4, cost: 110, price: 220, stock: 50, barcode: '5000000000074', min: 12 },
+
+    // === BODY CARE ===
+    { name: 'Body Lotion Lavender 400ml', nameAr: 'لوشن جسم لافندر 400مل', cat: 'Body Lotion', brand: 'Nivea', unit: 'Bottle', supplier: 6, cost: 110, price: 220, stock: 85, barcode: '4000010012348', min: 20 },
+    { name: 'Body Lotion Shea 400ml', nameAr: 'لوشن جسم شيا 400مل', cat: 'Body Lotion', brand: 'Nivea', unit: 'Bottle', supplier: 6, cost: 115, price: 230, stock: 78, barcode: '4000010012349', min: 20 },
+    { name: 'Body Wash Rose 500ml', nameAr: 'غسول جسم ورد 500مل', cat: 'Bath Products', brand: 'Garnier', unit: 'Bottle', supplier: 6, cost: 85, price: 170, stock: 100, barcode: '3600010012348', min: 25 },
+    { name: 'Body Scrub Coffee 200g', nameAr: 'سكريب قهوة 200جم', cat: 'Bath Products', brand: 'Local', unit: 'Jar', supplier: 6, cost: 90, price: 180, stock: 60, barcode: '2000000000109', min: 15 },
+    { name: 'Hand Cream 75ml', nameAr: 'كريم يدين 75مل', cat: 'Body Lotion', brand: 'Nivea', unit: 'Tube', supplier: 6, cost: 60, price: 120, stock: 110, barcode: '4000010012350', min: 25 },
+    { name: 'Bath Salt Rose 500g', nameAr: 'ملح حمام وردي 500جم', cat: 'Bath Products', brand: 'Local', unit: 'Pack', supplier: 6, cost: 70, price: 150, stock: 55, barcode: '2000000000116', min: 15 },
+
+    // === BEAUTY TOOLS ===
+    { name: 'Makeup Brush Set 12', nameAr: 'طقم فرش مكياج 12 قطعة', cat: 'Brushes', brand: 'Local', unit: 'Set', supplier: 5, cost: 200, price: 400, stock: 40, barcode: '6000000000015', min: 10 },
+    { name: 'Foundation Brush', nameAr: 'فرشاة فاونديشن', cat: 'Brushes', brand: 'Local', unit: 'Piece', supplier: 5, cost: 45, price: 95, stock: 80, barcode: '6000000000022', min: 20 },
+    { name: 'Blush Brush', nameAr: 'فرشاة بلاشر', cat: 'Brushes', brand: 'Local', unit: 'Piece', supplier: 5, cost: 50, price: 105, stock: 70, barcode: '6000000000039', min: 15 },
+    { name: 'Makeup Mirror LED', nameAr: 'مرايا مكياج LED', cat: 'Accessories', brand: 'Local', unit: 'Piece', supplier: 5, cost: 180, price: 350, stock: 25, barcode: '6000000000046', min: 5 },
+    { name: 'Eyelash Curler', nameAr: 'ملعقة رموش', cat: 'Accessories', brand: 'Local', unit: 'Piece', supplier: 5, cost: 40, price: 85, stock: 65, barcode: '6000000000053', min: 15 },
+    { name: 'Makeup Sponges Set 5', nameAr: 'طقم إسفنج مكياج 5 قطع', cat: 'Accessories', brand: 'Local', unit: 'Pack', supplier: 5, cost: 35, price: 80, stock: 90, barcode: '6000000000060', min: 20 },
+    { name: 'Tweezers Set', nameAr: 'طقم ملاقط', cat: 'Accessories', brand: 'Local', unit: 'Set', supplier: 5, cost: 55, price: 110, stock: 50, barcode: '6000000000077', min: 12 },
+
+    // === MENS GROOMING ===
+    { name: 'Mens Face Wash 150ml', nameAr: 'غسول وجه رجالي 150مل', cat: 'Cleansers', brand: 'Nivea', unit: 'Tube', supplier: 8, cost: 95, price: 190, stock: 70, barcode: '4000010012351', min: 15 },
+    { name: 'Mens Aftershave 100ml', nameAr: 'أفترشيف رجالي 100مل', cat: 'Mens Perfume', brand: 'Hugo Boss', unit: 'Bottle', supplier: 8, cost: 350, price: 680, stock: 30, barcode: '7370520012347', min: 8 },
+    { name: 'Beard Oil 50ml', nameAr: 'زيت لحية 50مل', cat: 'Hair Treatments', brand: 'Local', unit: 'Bottle', supplier: 8, cost: 70, price: 140, stock: 60, barcode: '2000000000123', min: 15 },
+    { name: 'Mens Deodorant 150ml', nameAr: 'مزيل عرق رجالي 150مل', cat: 'Body Mist', brand: 'Calvin Klein', unit: 'Bottle', supplier: 8, cost: 130, price: 260, stock: 55, barcode: '8830010012346', min: 12 },
   ]
 
   const productRecords = []
@@ -196,19 +285,17 @@ async function main() {
     const supplier = supplierRecords[p.supplier]
     const product = await db.product.create({
       data: {
-        name: p.name, nameAr: p.nameAr, sku: `SKU-${String(i+1).padStart(4,'0')}`,
+        name: p.name, nameAr: p.nameAr, sku: `BTY-${String(i+1).padStart(4,'0')}`,
         barcode: p.barcode, categoryId: category.id, brandId: brand?.id, unitId: unit?.id,
         supplierId: supplier.id, storeId: store.id,
-        purchaseCost: p.cost, sellingPrice: p.price, wholesalePrice: p.price * 0.85,
+        purchaseCost: p.cost, sellingPrice: p.price, wholesalePrice: Math.round(p.price * 0.85),
         taxRate: 14, minStock: p.min, reorderLevel: Math.floor(p.min * 1.5),
         avgCost: p.cost, active: true,
       }
     })
-    // Set stock level
     await db.stockLevel.create({
       data: { productId: product.id, warehouseId: warehouse.id, quantity: p.stock }
     })
-    // Create opening stock movement
     await db.stockMovement.create({
       data: { productId: product.id, warehouseId: warehouse.id, type: 'OPENING_STOCK',
         quantity: p.stock, refType: 'Opening', note: 'رصيد افتتاحي' }
@@ -218,17 +305,17 @@ async function main() {
 
   // ============ CUSTOMERS (20) ============
   const customerNames = [
-    'محمد علي','فاطمة أحمد','خالد حسن','منى محمود','عبدالله سعيد','نورا إبراهيم',
-    'أحمد عبدالرحمن','سارة محمد','يوسف كمال','هدى مصطفى','عمر فاروق','ليلى ناصر',
-    'كريم عادل','ريم حسني','طارق فؤاد','أمل زكي','ماجد سمير','دعاء أنور',
-    'حسام الدين','فريدة جمال'
+    'نورا أحمد','فاطمة محمد','مريم خالد','سارة حسن','هدى محمود','منى سعيد',
+    'أحمد علي','عمر فاروق','خالد إبراهيم','ريم حسني','دعاء أنور','أمل زكي',
+    'ليلى ناصر','فريدة جمال','ماجد سمير','كريم عادل','حسام الدين','عبدالله فؤاد',
+    'نور إسلام','جنى طارق'
   ]
   const customers = []
   for (let i = 0; i < customerNames.length; i++) {
     const c = await db.customer.create({
       data: {
         name: customerNames[i], phone: `010${String(i+1).padStart(8,'0')}`,
-        email: `customer${i+1}@email.com`, address: `العنوان ${i+1}`,
+        email: `customer${i+1}@beauty.com`, address: `العنوان ${i+1}`,
         tier: i < 3 ? 'VIP' : i < 8 ? 'GOLD' : i < 14 ? 'SILVER' : 'BRONZE',
         birthday: new Date(1990 + i, i % 12, (i % 28) + 1),
       }
@@ -257,11 +344,11 @@ async function main() {
   // ============ LOYALTY CAMPAIGN ============
   await db.loyaltyCampaign.create({
     data: {
-      name: 'عرض نهاية الأسبوع - نقاط مضاعفة',
-      description: 'نقاط مضاعفة يومي الجمعة والسبت',
+      name: 'عرض الجمعة البيضاء - نقاط مضاعفة',
+      description: 'نقاط مضاعفة على كل منتجات المكياج يوم الجمعة',
       startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
       endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-      pointsMultiplier: 2.0, bonusPoints: 0, minPurchase: 50, active: true,
+      pointsMultiplier: 2.0, bonusPoints: 0, minPurchase: 200, active: true,
     }
   })
 
@@ -273,6 +360,7 @@ async function main() {
     { name: 'Salary', nameAr: 'رواتب', color: '#10b981' },
     { name: 'Transport', nameAr: 'مواصلات', color: '#8b5cf6' },
     { name: 'Maintenance', nameAr: 'صيانة', color: '#ec4899' },
+    { name: 'Marketing', nameAr: 'تسويق', color: '#06b6d4' },
     { name: 'Other', nameAr: 'أخرى', color: '#6b7280' },
   ]
   const expCatRecords = await Promise.all(expCats.map(c => db.expenseCategory.create({ data: c })))
@@ -283,7 +371,7 @@ async function main() {
   const now = new Date()
   
   for (let day = 30; day >= 0; day--) {
-    const salesPerDay = Math.floor(Math.random() * 5) + 3 // 3-7 sales per day
+    const salesPerDay = Math.floor(Math.random() * 5) + 3
     for (let s = 0; s < salesPerDay; s++) {
       const saleDate = new Date(now.getTime() - day * 24 * 60 * 60 * 1000 - Math.random() * 8 * 60 * 60 * 1000)
       const itemCount = Math.floor(Math.random() * 4) + 1
@@ -321,7 +409,6 @@ async function main() {
         }
       })
 
-      // Deduct stock & movements
       for (const it of items) {
         await db.stockLevel.updateMany({
           where: { productId: it.product.id, warehouseId: warehouse.id },
@@ -333,7 +420,6 @@ async function main() {
         })
       }
 
-      // Loyalty
       if (customer && sale.loyaltyEarned > 0) {
         await db.loyaltyAccount.update({
           where: { customerId: customer.id },
@@ -350,22 +436,11 @@ async function main() {
   // ============ EXPENSES ============
   for (let day = 30; day >= 0; day -= 7) {
     const eDate = new Date(now.getTime() - day * 24 * 60 * 60 * 1000)
-    await db.expense.create({
-      data: { categoryId: expCatRecords[0].id, userId: admin.id, amount: 5000,
-        paymentMethod: 'CASH', note: 'إيجار الشهر', date: eDate }
-    })
-    await db.expense.create({
-      data: { categoryId: expCatRecords[1].id, userId: admin.id, amount: 800,
-        paymentMethod: 'CASH', note: 'فاتورة كهرباء', date: eDate }
-    })
-    await db.expense.create({
-      data: { categoryId: expCatRecords[2].id, userId: admin.id, amount: 300,
-        paymentMethod: 'CASH', note: 'إنترنت', date: eDate }
-    })
-    await db.expense.create({
-      data: { categoryId: expCatRecords[3].id, userId: admin.id, amount: 3000,
-        paymentMethod: 'CASH', note: 'رواتب', date: eDate }
-    })
+    await db.expense.create({ data: { categoryId: expCatRecords[0].id, userId: admin.id, amount: 8000, paymentMethod: 'CASH', note: 'إيجار المحل', date: eDate } })
+    await db.expense.create({ data: { categoryId: expCatRecords[1].id, userId: admin.id, amount: 1200, paymentMethod: 'CASH', note: 'فاتورة كهرباء', date: eDate } })
+    await db.expense.create({ data: { categoryId: expCatRecords[2].id, userId: admin.id, amount: 400, paymentMethod: 'CASH', note: 'إنترنت', date: eDate } })
+    await db.expense.create({ data: { categoryId: expCatRecords[3].id, userId: admin.id, amount: 5000, paymentMethod: 'CASH', note: 'رواتب', date: eDate } })
+    await db.expense.create({ data: { categoryId: expCatRecords[6].id, userId: admin.id, amount: 1500, paymentMethod: 'CARD', note: 'حملة إعلانية', date: eDate } })
   }
 
   // ============ SETTINGS ============
@@ -384,14 +459,23 @@ async function main() {
       { key: 'currency', value: 'EGP', category: 'general' },
       { key: 'language', value: 'ar', category: 'general' },
       { key: 'store.name', value: store.name, category: 'general' },
+      { key: 'system.locked', value: 'false', category: 'system' },
+      { key: 'system.lockedReason', value: '', category: 'system' },
+      { key: 'system.platformMode', value: 'false', category: 'system' },
+      { key: 'supabase.url', value: '', category: 'sync' },
+      { key: 'supabase.key', value: '', category: 'sync' },
+      { key: 'sync.enabled', value: 'false', category: 'sync' },
+      { key: 'sync.lastSync', value: '', category: 'sync' },
     ]
   })
 
-  console.log('✅ Seed complete!')
+  console.log('✅ Beauty store seed complete!')
   console.log(`   Products: ${productRecords.length}`)
   console.log(`   Customers: ${customers.length}`)
   console.log(`   Suppliers: ${supplierRecords.length}`)
+  console.log(`   Categories: ${allCategories.length} (main + sub)`)
   console.log(`   Demo login: admin/admin123, manager/manager123, cashier/cashier123`)
+  console.log(`   Platform admin: platform/platform123`)
 }
 
 main()
